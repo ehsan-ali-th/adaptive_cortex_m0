@@ -37,6 +37,7 @@ entity registers is
         reset : in std_logic;
         WE : in std_logic;
         gp_data_in : in std_logic_vector(31 downto 0);
+        gp_WR_addr: in std_logic_vector(3 downto 0);
         gp_addrA: in std_logic_vector(3 downto 0);
         gp_addrB: in std_logic_vector(3 downto 0);
         gp_ram_dataA : out std_logic_vector(31 downto 0);
@@ -54,6 +55,7 @@ architecture Behavioral of registers is
             WCLK : in std_logic;
             reset : in std_logic;
             WE : in std_logic;
+            WR_ADDR: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');
             DI: in std_logic_vector (DATA_WIDTH-1 downto 0);
             ADDRA: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');
             DOA: out std_logic_vector (DATA_WIDTH-1 downto 0);
@@ -73,6 +75,7 @@ begin
             WCLK => clk,
             reset => reset,
             WE => WE,
+            WR_ADDR => gp_WR_addr,
             DI => gp_data_in,
             ADDRA => gp_addrA,
             DOA => gp_ram_dataA,   

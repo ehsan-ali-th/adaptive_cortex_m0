@@ -38,10 +38,11 @@ entity ram is
         WCLK : in std_logic;
         reset : in std_logic;
         WE : in std_logic;
+        WR_ADDR: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0'); -- Wrtie address
         DI: in std_logic_vector (DATA_WIDTH-1 downto 0);
-        ADDRA: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');
+        ADDRA: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address A
         DOA: out std_logic_vector (DATA_WIDTH-1 downto 0);
-        ADDRB: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');
+        ADDRB: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address B
         DOB: out std_logic_vector (DATA_WIDTH-1 downto 0)  
     );
 end ram;
@@ -56,7 +57,7 @@ begin
         --if (reset = '0') then
             if rising_edge(WCLK) then
                 if WE = '1' then
-                    ram_s(to_integer(unsigned(ADDRA))) <= DI;
+                    ram_s(to_integer(unsigned(WR_ADDR))) <= DI;
                 end if;
             end if;      
         --end if;

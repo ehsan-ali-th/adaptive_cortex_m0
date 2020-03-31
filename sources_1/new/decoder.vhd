@@ -40,6 +40,7 @@ entity decoder is
         instruction : in STD_LOGIC_VECTOR (15 downto 0);
         d_PC : out std_logic;
         thumb : out std_logic;                               -- indicates wether the decoded instruction is 16-bit thumb = 0 or 32-bit = 1
+        gp_WR_addr : out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
@@ -82,24 +83,24 @@ begin
     decode_shift_op_p: process (run, instruction) begin
         if (run = '1') then 
             if std_match(opcode, "00100-") then                                                 -- MOVS Rd, #<imm8>
-               gp_addrA <= '0' & instruction (10 downto 8);
-               gp_addrB <= "0000";
+               gp_WR_addr <= '0' & instruction (10 downto 8); -- Rd 
+               gp_addrA <= B"0000";
+               gp_addrB <= B"0000";
                imm8 <= instruction (7 downto 0);
---               execution_cmd <= "00000";
                execution_cmd <= MOVS_imm8;
                d_PC <= '0';
             elsif (std_match(opcode, "000000") and instruction(9 downto 6) = "0000") then       -- MOVS <Rd>,<Rm>   
-                gp_addrA <= '0' & instruction (2 downto 0); -- Rd
-                gp_addrB <= '0' & instruction (5 downto 3); -- Rm
+                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd 
+                gp_addrA <= '0' & instruction (5 downto 3); -- Rm
+                gp_addrB <= B"0000";
                 imm8 <= (others => '0');
---                 execution_cmd <= "00001";
                 execution_cmd <= MOVS;
                 d_PC <= '0';
             elsif (std_match(opcode, "010001") and instruction(9 downto 8) = "10") then         -- MOV <Rd>,<Rm>   
-                gp_addrA <= instruction(7) & instruction (2 downto 0); -- Rd
-                gp_addrB <= instruction (6 downto 3); -- Rm
+                gp_WR_addr <= instruction(7) & instruction (2 downto 0); -- Rd
+                gp_addrA <= instruction (6 downto 3); -- Rm
+                gp_addrB <= b"0000";
                 imm8 <= (others => '0');
---                 execution_cmd <= "00010";
                 execution_cmd <= MOV;
                 if ((instruction(7) & instruction (2 downto 0)) = B"1111" ) then    -- check if destination is PC ?
                     d_PC <= '1';
@@ -107,25 +108,31 @@ begin
                     d_PC <= '0';
                 end if;
             elsif (std_match(opcode, "000111") and instruction(9) = '0') then                   -- ADDS <Rd>,<Rn>,#<imm3>
-                gp_addrA <= '0' & instruction (2 downto 0); -- Rd
-                gp_addrB <= '0' & instruction (5 downto 3); -- Rn
+                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3); -- Rn 
+                gp_addrB <= b"0000";
                 imm8 <= "00000" & instruction (8 downto 6); -- imm3
---                 execution_cmd <= "00011";
                 execution_cmd <= ADDS_imm3;
                 d_PC <= '0';
+            elsif (std_match(opcode, "000110") and instruction(9) = '0') then                   -- ADDS <Rd>,<Rn>,<Rm>
+                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3); -- Rn
+                gp_addrB <= '0' & instruction (8 downto 6); -- Rm
+                execution_cmd <= ADDS;
+                d_PC <= '0';
             else   
+               gp_WR_addr <= (others => '0');
                gp_addrA <= (others => '0');
                gp_addrB <= (others => '0');
                imm8 <= (others => '0');
---                execution_cmd <= "11111";
               execution_cmd <= NOT_DEF;
                d_PC <= '0';
             end if;   
         else 
+            gp_WR_addr <= (others => '0');
             gp_addrA <= (others => '0');
             gp_addrB <= (others => '0');
             imm8 <= (others => '0');
---            execution_cmd <= "11111";
             execution_cmd <= NOT_DEF;
             d_PC <= '0';
         end if;    
