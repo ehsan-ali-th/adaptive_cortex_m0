@@ -98,8 +98,8 @@ architecture Behavioral of cortex_m0_core is
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
-        --execution_cmd: out executor_cmds_t
-        execution_cmd: out STD_LOGIC_VECTOR (4 downto 0)
+        execution_cmd: out executor_cmds_t
+        --execution_cmd: out STD_LOGIC_VECTOR (4 downto 0)
     );
     end component;
     
@@ -107,21 +107,17 @@ architecture Behavioral of cortex_m0_core is
         Port (
              clk : in std_logic;
              reset : in std_logic;
+             run : in std_logic;
              operand_A : in std_logic_vector(31 downto 0);	
              operand_B : in std_logic_vector(31 downto 0);	
-             --command: in executor_cmds_t;	
-             command: in std_logic_vector(4 downto 0);
+             command: in executor_cmds_t;	
+             --command: in std_logic_vector(4 downto 0);
              imm8_z_ext : in  std_logic_vector(31 downto 0);
              d_PC : in std_logic;
              result : out std_logic_vector(31 downto 0);
              WE: out std_logic
          );
     end component;
-    
-  
-
-
-  
     
     -- Declare clock interface
     ATTRIBUTE X_INTERFACE_INFO : STRING;
@@ -135,10 +131,9 @@ architecture Behavioral of cortex_m0_core is
 			
 	-- signals
 	signal Select_Inst_A_B : std_logic;                        -- = 0 inst A, = 1, inst B 
-	signal imm8_z_ext : std_logic_vector(31 downto 0);			
-	signal gp_addrA : std_logic_vector(3 downto 0);			
-	signal gp_addrA_final : std_logic_vector(3 downto 0);			
-	signal gp_addrB : std_logic_vector(3 downto 0);			
+	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
+	signal gp_addrA : std_logic_vector(3 downto 0) := (others => '0');	
+	signal gp_addrB : std_logic_vector(3 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
 	signal gp_addrA_value : std_logic_vector(3 downto 0);			
 	signal gp_addrB_value : std_logic_vector(3 downto 0);			
@@ -157,20 +152,16 @@ architecture Behavioral of cortex_m0_core is
     
     -- decoder signals
     signal imm8:  STD_LOGIC_VECTOR (7 downto 0);
-    signal WE_value :  std_logic;
 	signal WE :  std_logic;	
 	
 	-- executor signals
-    signal operand_A:  STD_LOGIC_VECTOR (31 downto 0);
-    signal operand_B:  STD_LOGIC_VECTOR (31 downto 0);
---    signal command:  executor_cmds_t;
---    signal command_value:  executor_cmds_t;
-    signal command:  STD_LOGIC_VECTOR (4 downto 0);
-    signal command_value:  STD_LOGIC_VECTOR (4 downto 0);
+    signal command:  executor_cmds_t := NOT_DEF;
+    signal command_value:  executor_cmds_t := NOT_DEF;
+--    signal command:  STD_LOGIC_VECTOR (4 downto 0);
+--    signal command_value:  STD_LOGIC_VECTOR (4 downto 0);
     signal result:  STD_LOGIC_VECTOR (31 downto 0);
-    signal mux_ctrl :  STD_LOGIC_VECTOR (1 downto 0);	
-	signal d_PC :  std_logic;	
-	signal d_PC_value :  std_logic;	
+	signal d_PC :  std_logic := '0';	
+	signal d_PC_value :  std_logic := '0';	
     
   
 
@@ -218,6 +209,7 @@ begin
      m0_executor: executor port map (
              clk => HCLK,
              reset => internal_reset,
+             run => run,
              operand_A => gp_ram_dataA,	
              operand_B => gp_ram_dataB,	
              command => command, 	
@@ -294,10 +286,10 @@ begin
     
      imm8_z_ext_value_p: process  (command_value, imm8) begin
         case (command_value) is
---            when MOVS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
---            when ADDS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when "00000" => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when "00011" => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when MOVS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when ADDS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+--            when "00000" => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+--            when "00011" => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;

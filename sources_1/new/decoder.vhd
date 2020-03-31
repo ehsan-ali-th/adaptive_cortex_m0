@@ -43,8 +43,8 @@ entity decoder is
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
-        --execution_cmd: out executor_cmds_t
-        execution_cmd: out STD_LOGIC_VECTOR (4 downto 0)
+        execution_cmd: out executor_cmds_t
+        --execution_cmd: out STD_LOGIC_VECTOR (4 downto 0)
     );
 end decoder;
 
@@ -85,22 +85,22 @@ begin
                gp_addrA <= '0' & instruction (10 downto 8);
                gp_addrB <= "0000";
                imm8 <= instruction (7 downto 0);
-               execution_cmd <= "00000";
-               --execution_cmd <= MOVS_imm8;
+--               execution_cmd <= "00000";
+               execution_cmd <= MOVS_imm8;
                d_PC <= '0';
             elsif (std_match(opcode, "000000") and instruction(9 downto 6) = "0000") then       -- MOVS <Rd>,<Rm>   
                 gp_addrA <= '0' & instruction (2 downto 0); -- Rd
                 gp_addrB <= '0' & instruction (5 downto 3); -- Rm
                 imm8 <= (others => '0');
-                 execution_cmd <= "00001";
-                --execution_cmd <= MOVS;
+--                 execution_cmd <= "00001";
+                execution_cmd <= MOVS;
                 d_PC <= '0';
             elsif (std_match(opcode, "010001") and instruction(9 downto 8) = "10") then         -- MOV <Rd>,<Rm>   
                 gp_addrA <= instruction(7) & instruction (2 downto 0); -- Rd
                 gp_addrB <= instruction (6 downto 3); -- Rm
                 imm8 <= (others => '0');
-                 execution_cmd <= "00010";
-                --execution_cmd <= MOV;
+--                 execution_cmd <= "00010";
+                execution_cmd <= MOV;
                 if ((instruction(7) & instruction (2 downto 0)) = B"1111" ) then    -- check if destination is PC ?
                     d_PC <= '1';
                 else
@@ -110,23 +110,24 @@ begin
                 gp_addrA <= '0' & instruction (2 downto 0); -- Rd
                 gp_addrB <= '0' & instruction (5 downto 3); -- Rn
                 imm8 <= "00000" & instruction (8 downto 6); -- imm3
-                 execution_cmd <= "00011";
-                --execution_cmd <= ADDS_imm3;
+--                 execution_cmd <= "00011";
+                execution_cmd <= ADDS_imm3;
                 d_PC <= '0';
             else   
                gp_addrA <= (others => '0');
                gp_addrB <= (others => '0');
                imm8 <= (others => '0');
-                execution_cmd <= "11111";
-              --execution_cmd <= NOT_DEF;
+--                execution_cmd <= "11111";
+              execution_cmd <= NOT_DEF;
                d_PC <= '0';
             end if;   
         else 
             gp_addrA <= (others => '0');
             gp_addrB <= (others => '0');
             imm8 <= (others => '0');
-            execution_cmd <= "11111";
-            --execution_cmd <= NOT_DEF;
+--            execution_cmd <= "11111";
+            execution_cmd <= NOT_DEF;
+            d_PC <= '0';
         end if;    
 end process;
     

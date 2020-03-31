@@ -38,10 +38,11 @@ entity executor is
     Port (
          clk : in std_logic;
          reset : in std_logic;
+         run : in std_logic;
          operand_A : in std_logic_vector(31 downto 0);	
          operand_B : in std_logic_vector(31 downto 0);	
-         --command: in executor_cmds_t;	
-         command : in STD_LOGIC_VECTOR (4 downto 0);
+         command: in executor_cmds_t;	
+         --command : in STD_LOGIC_VECTOR (4 downto 0);
          imm8_z_ext : in  std_logic_vector(31 downto 0);
          d_PC : in std_logic;
          result : out std_logic_vector(31 downto 0);
@@ -114,21 +115,25 @@ begin
         );
         
           
-    gp_data_in_p: process  (imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
-        case mux_ctrl is
-            when B"00" =>   result_final <= imm8_z_ext;
-            when B"10" =>   result_final <= operand_A;
-            when B"01" =>   result_final <= operand_B;
-            when B"11" =>   result_final <= alu_result;
-            when others =>  result_final <= (others => '0');
-        end case;
+    gp_data_in_p: process  (run, imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
+        if (run = '1') then 
+            case mux_ctrl is
+                when B"00" =>   result_final <= imm8_z_ext;
+                when B"10" =>   result_final <= operand_A;
+                when B"01" =>   result_final <= operand_B;
+                when B"11" =>   result_final <= alu_result;
+                when others =>  result_final <= (others => '0');
+            end case;
+        else 
+            result_final <= (others => '0');
+        end if;    
     end process;
     
 
     execution_p: process  (command, result_final, alu_result, operand_B, imm8_z_ext) begin
         case (command) is
---            when MOVS_imm8 =>     -- MOVS Rd, #(imm8)                         
-            when "00000" =>     -- MOVS Rd, #(imm8)                         
+            when MOVS_imm8 =>     -- MOVS Rd, #(imm8)                         
+--            when "00000" =>     -- MOVS Rd, #(imm8)                         
                 WE <= '1'; 
                 mux_ctrl <= B"00";    -- immediate value  
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -138,8 +143,8 @@ begin
                     set_Z <= '0';
                 end if;    
                 set_C <= '0';
---            when MOVS =>     -- MOVS <Rd>,<Rm> 
-            when "00001" =>     -- MOVS <Rd>,<Rm> 
+            when MOVS =>     -- MOVS <Rd>,<Rm> 
+--            when "00001" =>     -- MOVS <Rd>,<Rm> 
                 WE <= '1'; 
                 mux_ctrl <= B"01";          -- B bus of register bank
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -148,8 +153,8 @@ begin
                 else
                     set_Z <= '0';
                 end if;  
---            when MOV =>     -- MOV <Rd>,<Rm> 
-            when "00010" =>     -- MOV <Rd>,<Rm> 
+            when MOV =>     -- MOV <Rd>,<Rm> 
+--            when "00010" =>     -- MOV <Rd>,<Rm> 
                 WE <= '1'; 
                 mux_ctrl <= B"01";          -- B bus of register bank
                 if (d_PC = '0') then        -- if d_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
@@ -160,8 +165,8 @@ begin
                         set_Z <= '0';
                     end if;    
                 end if;   
---             when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
-             when "00011" =>     -- ADDS <Rd>,<Rn>,#<imm3>
+             when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
+--             when "00011" =>     -- ADDS <Rd>,<Rn>,#<imm3>
                 WE <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -191,8 +196,8 @@ begin
      
     alu_p: process  (command, operand_B, imm8_z_ext) begin
         case (command) is
---            when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
-            when "00011" =>     -- ADDS <Rd>,<Rn>,#<imm3>
+            when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
+--            when "00011" =>     -- ADDS <Rd>,<Rn>,#<imm3>
                 alu_temp <= unsigned ('0' & operand_B) + unsigned('0' & imm8_z_ext); -- AddWithCarry(R[n], imm32, '0');
             when others  =>
                 alu_temp <= (others => '0');
