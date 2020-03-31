@@ -73,7 +73,7 @@ architecture Behavioral of executor is
     end component;
     
       -- status flags signals
-	signal WE_flags :  std_logic;	
+	signal  flag_reg_WE :  std_logic;	
 	signal  set_N       :  std_logic;	
     signal  set_Z       :  std_logic;
     signal  set_C       :  std_logic;
@@ -90,7 +90,7 @@ architecture Behavioral of executor is
     -- signals 
     signal mux_ctrl     :  std_logic_vector (1 downto 0);
     signal alu_result :  std_logic_vector (31 downto 0);
-    signal alu_temp : unsigned (32 downto 0);
+    signal alu_temp : unsigned (32 downto 0) := (others => '0');
     signal temp_overflow : std_logic_vector (2 downto 0);
     signal result_final :  std_logic_vector (31 downto 0);
 
@@ -99,7 +99,7 @@ begin
     m0_flags: status_flags port map (
             clk => clk,
             reset => reset,
-            WE => WE_flags,
+            WE => flag_reg_WE,
             N  => set_N, 
             Z  => set_Z,
             C  => set_C,
@@ -114,7 +114,6 @@ begin
             RT  => T_flag
         );
         
-          
     gp_data_in_p: process  (run, imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
         if (run = '1') then 
             case mux_ctrl is
@@ -128,12 +127,10 @@ begin
             result_final <= (others => '0');
         end if;    
     end process;
-    
-
+ 
     execution_p: process  (command, result_final, alu_result, operand_B, imm8_z_ext) begin
         case (command) is
             when MOVS_imm8 =>     -- MOVS Rd, #(imm8)                         
---            when "00000" =>     -- MOVS Rd, #(imm8)                         
                 WE <= '1'; 
                 mux_ctrl <= B"00";    -- immediate value  
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -143,8 +140,8 @@ begin
                     set_Z <= '0';
                 end if;    
                 set_C <= '0';
+                flag_reg_WE <= '1';
             when MOVS =>     -- MOVS <Rd>,<Rm> 
---            when "00001" =>     -- MOVS <Rd>,<Rm> 
                 WE <= '1'; 
                 mux_ctrl <= B"01";          -- B bus of register bank
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -153,8 +150,8 @@ begin
                 else
                     set_Z <= '0';
                 end if;  
+                flag_reg_WE <= '1';
             when MOV =>     -- MOV <Rd>,<Rm> 
---            when "00010" =>     -- MOV <Rd>,<Rm> 
                 WE <= '1'; 
                 mux_ctrl <= B"01";          -- B bus of register bank
                 if (d_PC = '0') then        -- if d_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
@@ -165,8 +162,8 @@ begin
                         set_Z <= '0';
                     end if;    
                 end if;   
+                flag_reg_WE <= '1';
              when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
---             when "00011" =>     -- ADDS <Rd>,<Rn>,#<imm3>
                 WE <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -187,17 +184,35 @@ begin
                 else
                     set_V <= '0';
                 end if;    
-        when others  => 
+                flag_reg_WE <= '1';
+             when NOT_DEF =>
                 WE <= '0'; 
                 mux_ctrl <= B"00";
+                flag_reg_WE <= '0';
+                set_N       <= '0';
+                set_Z       <= '0';
+                set_C       <= '0';
+                set_V       <= '0';
+                set_EN      <= (others => '0');
+                set_T       <= '0';
+                temp_overflow <= (others => '0');
+            when others  => 
+                WE <= '0'; 
+                mux_ctrl <= B"00";
+                flag_reg_WE <= '0';
+                set_N       <= '0';
+                set_Z       <= '0';
+                set_C       <= '0';
+                set_V       <= '0';
+                set_EN      <= (others => '0');
+                set_T       <= '0';       
+                temp_overflow <= (others => '0');        
         end case;       
      end process;
-     
      
     alu_p: process  (command, operand_B, imm8_z_ext) begin
         case (command) is
             when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
---            when "00011" =>     -- ADDS <Rd>,<Rn>,#<imm3>
                 alu_temp <= unsigned ('0' & operand_B) + unsigned('0' & imm8_z_ext); -- AddWithCarry(R[n], imm32, '0');
             when others  =>
                 alu_temp <= (others => '0');
