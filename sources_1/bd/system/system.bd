@@ -214,6 +214,11 @@
       "cortex_m0_core_0": {
         "vlnv": "xilinx.com:module_ref:cortex_m0_core:1.0",
         "xci_name": "system_cortex_m0_core_0_0",
+        "parameters": {
+          "S_PROGRAM_MEMORY_ENDIAN": {
+            "value": "true"
+          }
+        },
         "reference_info": {
           "ref_type": "hdl",
           "ref_name": "cortex_m0_core",

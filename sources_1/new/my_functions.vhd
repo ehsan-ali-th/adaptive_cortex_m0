@@ -36,7 +36,7 @@ package helper_funcs is
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     type executor_cmds_t is (
         MOVS_imm8, MOVS, MOV, 
-        ADDS_imm3, ADDS,
+        ADDS_imm3, ADDS, ADD, ADDS_imm8, ADCS,
         NOT_DEF);  -- Executor commands
 end  helper_funcs;
 

@@ -36,6 +36,7 @@ use xil_defaultlib.helper_funcs.all;
 
 
 entity cortex_m0_core is
+    generic (S_PROGRAM_MEMORY_ENDIAN: boolean := FALSE);           -- little endian = 0, big endian = 1
     Port ( 
             HCLK : in STD_LOGIC;                        -- Clock
          HRESETn : in STD_LOGIC;                        -- Asynchronous reset
@@ -170,6 +171,7 @@ architecture Behavioral of cortex_m0_core is
   
 
     -- aliases
+    -- Little endian:
     -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
     -- [31 30 29 28 - 27 26 25 24] [23 22 21 20 - 19 18 17 16] [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
     alias inst_A_1st_half : STD_LOGIC_VECTOR(7 downto 0) is HRDATA (31 downto 24);
@@ -252,14 +254,20 @@ begin
         if (rising_edge(HCLK)) then
             if (internal_reset = '0') then  
                 if (run = '1' and load_current_inst_permitted = '1') then  
-                    if (Select_Inst_A_B = '0') then 
-                        current_instruction <= inst_A_2nd_half & inst_A_1st_half;
+                    if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then 
+                        if (Select_Inst_A_B = '0') then 
+                            current_instruction <= inst_A_2nd_half & inst_A_1st_half;
+                        else
+                            current_instruction <= inst_B_2nd_half & inst_B_1st_half;
+                        end if;
                     else
-                        current_instruction <= inst_B_2nd_half & inst_B_1st_half;
+                        if (Select_Inst_A_B = '0') then 
+                            current_instruction <= inst_A_1st_half & inst_A_2nd_half;
+                        else
+                            current_instruction <= inst_B_1st_half & inst_B_2nd_half;
+                        end if;
                     end if;
-                else
-                    current_instruction <= (others => '0');
-                end if;
+                end if;    
             else
                 current_instruction <= (others => '0');
             end if;
@@ -295,8 +303,7 @@ begin
         case (command_value) is
             when MOVS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when ADDS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
---            when "00000" => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
---            when "00011" => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when ADDS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
@@ -346,6 +353,19 @@ begin
                 Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));
                 cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";    
+            elsif std_match(current_instruction(15 downto 8), "01000100") then                  -- ADD <Rdn>,<Rm>  
+                Rd_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));
+                Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
+                cortex_m0_opcode <= "ADD  " & Rd_decode & "," & Rm_decode & "    ";    
+            elsif std_match(current_instruction(15 downto 11), "00110") then                  -- ADDS <Rdn>,#<imm8>  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
+                imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
+                imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
+                cortex_m0_opcode <= "ADDS " & Rd_decode & "," & imm8_decode & "   ";    
+            elsif std_match(current_instruction(15 downto 6), "0100000101") then                  -- ADCS <Rdn>,<Rm>  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "    ";    
             end if;
             
           if rising_edge(HCLK) then 

@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-<EDKSYSTEM EDWVERSION="1.2" TIMESTAMP="Tue Mar 31 23:24:20 2020" VIVADOVERSION="2018.3">
+<EDKSYSTEM EDWVERSION="1.2" TIMESTAMP="Wed Apr  1 16:33:41 2020" VIVADOVERSION="2018.3">
 
   <SYSTEMINFO ARCH="zynquplus" BOARD="xilinx.com:zcu104:part0:1.1" DEVICE="xczu7ev" NAME="system" PACKAGE="ffvc1156" SPEEDGRADE="-2"/>
 
@@ -912,6 +912,7 @@
     <MODULE COREREVISION="1" FULLNAME="/cortex_m0_core_0" HWVERSION="1.0" INSTANCE="cortex_m0_core_0" IPTYPE="PERIPHERAL" IS_ENABLE="1" MODCLASS="PERIPHERAL" MODTYPE="cortex_m0_core" VLNV="xilinx.com:module_ref:cortex_m0_core:1.0">
       <DOCUMENTS/>
       <PARAMETERS>
+        <PARAMETER NAME="S_PROGRAM_MEMORY_ENDIAN" VALUE="true"/>
         <PARAMETER NAME="Component_Name" VALUE="system_cortex_m0_core_0_0"/>
         <PARAMETER NAME="EDK_IPTYPE" VALUE="PERIPHERAL"/>
       </PARAMETERS>

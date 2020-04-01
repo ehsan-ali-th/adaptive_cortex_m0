@@ -82,6 +82,9 @@ ARCHITECTURE system_cortex_m0_core_0_0_arch OF system_cortex_m0_core_0_0 IS
   ATTRIBUTE DowngradeIPIdentifiedWarnings : STRING;
   ATTRIBUTE DowngradeIPIdentifiedWarnings OF system_cortex_m0_core_0_0_arch: ARCHITECTURE IS "yes";
   COMPONENT cortex_m0_core IS
+    GENERIC (
+      S_PROGRAM_MEMORY_ENDIAN : BOOLEAN
+    );
     PORT (
       HCLK : IN STD_LOGIC;
       HRESETn : IN STD_LOGIC;
@@ -117,6 +120,9 @@ ARCHITECTURE system_cortex_m0_core_0_0_arch OF system_cortex_m0_core_0_0 IS
   ATTRIBUTE X_INTERFACE_INFO OF HCLK: SIGNAL IS "xilinx.com:signal:clock:1.0 HCLK CLK";
 BEGIN
   U0 : cortex_m0_core
+    GENERIC MAP (
+      S_PROGRAM_MEMORY_ENDIAN => true
+    )
     PORT MAP (
       HCLK => HCLK,
       HRESETn => HRESETn,
