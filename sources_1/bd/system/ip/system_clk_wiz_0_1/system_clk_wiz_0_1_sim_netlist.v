@@ -1,10 +1,10 @@
-// Copyright 1986-2018 Xilinx, Inc. All Rights Reserved.
+// Copyright 1986-2019 Xilinx, Inc. All Rights Reserved.
 // --------------------------------------------------------------------------------
-// Tool Version: Vivado v.2018.3 (lin64) Build 2405991 Thu Dec  6 23:36:41 MST 2018
-// Date        : Sun Mar 22 17:45:12 2020
-// Host        : esi-OMEN-by-HP-Laptop-15-dc0xxx running 64-bit Ubuntu 19.04
+// Tool Version: Vivado v.2019.2 (win64) Build 2708876 Wed Nov  6 21:40:23 MST 2019
+// Date        : Thu Apr  9 20:19:20 2020
+// Host        : DESKTOP-GB8O8RC running 64-bit major release  (build 9200)
 // Command     : write_verilog -force -mode funcsim
-//               /home/esi/workspace/Vivado_2018.3/zcu104/Cortex_M0/Cortex_M0.srcs/sources_1/bd/system/ip/system_clk_wiz_0_1/system_clk_wiz_0_1_sim_netlist.v
+//               D:/workspace/Vivado_2019.2/Cortex_M0/Cortex_M0.srcs/sources_1/bd/system/ip/system_clk_wiz_0_1/system_clk_wiz_0_1_sim_netlist.v
 // Design      : system_clk_wiz_0_1
 // Purpose     : This verilog netlist is a functional simulation representation of the design and should not be modified
 //               or synthesized. This netlist cannot be used for SDF annotated simulation.
@@ -93,13 +93,14 @@ module system_clk_wiz_0_1_system_clk_wiz_0_1_clk_wiz
   (* BOX_TYPE = "PRIMITIVE" *) 
   (* XILINX_LEGACY_PRIM = "BUFG" *) 
   BUFGCE #(
-    .CE_TYPE("ASYNC")) 
+    .CE_TYPE("ASYNC"),
+    .SIM_DEVICE("ULTRASCALE_PLUS")) 
     clkout1_buf
        (.CE(1'b1),
         .I(CLK_system_clk_wiz_0_1),
         .O(CLK));
   (* BOX_TYPE = "PRIMITIVE" *) 
-  (* OPT_MODIFIED = "MLO " *) 
+  (* OPT_MODIFIED = "MLO" *) 
   MMCME4_ADV #(
     .BANDWIDTH("OPTIMIZED"),
     .CLKFBOUT_MULT_F(4.000000),

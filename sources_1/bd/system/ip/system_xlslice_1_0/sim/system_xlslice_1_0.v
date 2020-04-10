@@ -48,7 +48,7 @@
 
 
 // IP VLNV: xilinx.com:ip:xlslice:1.0
-// IP Revision: 1
+// IP Revision: 2
 
 `timescale 1ns/1ps
 
@@ -61,7 +61,7 @@ module system_xlslice_1_0 (
 input wire [31 : 0] Din;
 output wire [14 : 0] Dout;
 
-  xlslice_v1_0_1_xlslice #(
+  xlslice_v1_0_2_xlslice #(
     .DIN_WIDTH(32),
     .DIN_FROM(16),
     .DIN_TO(2)

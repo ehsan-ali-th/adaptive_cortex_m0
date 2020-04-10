@@ -53,11 +53,11 @@
 #ifndef _system_xlconstant_0_2_H_
 #define _system_xlconstant_0_2_H_
 
-#include "xlconstant_v1_1_5.h"
+#include "xlconstant_v1_1_6.h"
 #include "systemc.h"
 class system_xlconstant_0_2 : public sc_module {
   public:
-xlconstant_v1_1_5<16,0> mod;
+xlconstant_v1_1_6<16,0> mod;
   sc_out< sc_bv<16> > dout;
 system_xlconstant_0_2 (sc_core::sc_module_name name) :sc_module(name), mod("mod") {
     mod.dout(dout);

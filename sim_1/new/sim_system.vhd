@@ -63,9 +63,7 @@ begin
     clk300Mhz_p <= not clk300Mhz_p after half_period300;
     
     tb: process begin
-        wait for 100ns;
-        reset <= '0';
-        wait for 200ns;
+        wait for 100ns; 
         reset <= '1';
         wait for 500ns;
         reset <= '0';

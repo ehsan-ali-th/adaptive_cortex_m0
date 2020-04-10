@@ -42,15 +42,25 @@ entity executor is
          operand_A : in std_logic_vector(31 downto 0);	
          operand_B : in std_logic_vector(31 downto 0);	
          command: in executor_cmds_t;	
-         --command : in STD_LOGIC_VECTOR (4 downto 0);
          imm8_z_ext : in  std_logic_vector(31 downto 0);
          d_PC : in std_logic;
+         state: in core_state_t;
+         PC_updated: out std_logic;
          result : out std_logic_vector(31 downto 0);
          WE: out std_logic
      );
 end executor;
 
 architecture Behavioral of executor is
+
+    component pipeline_invalidator is
+        Port ( 
+            clk : in std_logic;
+            reset : in std_logic;
+            pc_updated : in std_logic;
+            pipeline_is_invalid: out std_logic
+        );
+    end component;
 
   component status_flags is
         Port (
@@ -87,16 +97,28 @@ architecture Behavioral of executor is
     signal  EN_flag     :  std_logic_vector (5 downto 0);
     signal  T_flag      :  std_logic;
     
+    
     -- signals 
     signal mux_ctrl     :  std_logic_vector (1 downto 0);
     signal alu_result :  std_logic_vector (31 downto 0);
     signal alu_temp : unsigned (32 downto 0) := (others => '0');
     signal temp_overflow : std_logic_vector (2 downto 0);
     signal result_final :  std_logic_vector (31 downto 0);
+    signal WE_val : std_logic;
+    signal pipeline_is_invalid : std_logic;
+    signal update_PC : std_logic;
+    
 
 begin
 
-    m0_flags: status_flags port map (
+    c0_pipeline_invalidator: pipeline_invalidator port map ( 
+            clk => clk,
+            reset => reset,
+            pc_updated => d_PC,
+            pipeline_is_invalid =>  pipeline_is_invalid
+        );
+
+    c0_flags: status_flags port map (
             clk => clk,
             reset => reset,
             WE => flag_reg_WE,
@@ -114,6 +136,8 @@ begin
             RT  => T_flag
         );
         
+    PC_updated <= d_PC;
+        
     gp_data_in_p: process  (run, imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
         if (run = '1') then 
             case mux_ctrl is
@@ -127,11 +151,28 @@ begin
             result_final <= (others => '0');
         end if;    
     end process;
+    
+--     WE_p: process  (WE_val, pipeline_is_invalid) begin
+--        if (pipeline_is_invalid = '1') then
+--            WE <= '0';
+--        else
+--            WE <= WE_val;
+--        end if;    
+--    end process;
+
+    WE_p: process  (WE_val, state) begin
+        if (state = s_PC_UPDATED_INVALID or state = s_EXEC_INSTA_INVALID or state = s_EXEC_INSTB_INVALID) then
+            WE <= '0';
+        else
+            WE <= WE_val;
+        end if;    
+    end process;
  
     execution_p: process  (command, result_final, alu_result, operand_A, operand_B, imm8_z_ext) begin
+      --if (inst_invalid = '0') then 
         case (command) is
-            when MOVS_imm8 =>     -- MOVS Rd, #(imm8)                         
-                WE <= '1'; 
+            when MOVS_imm8 =>       -- MOVS Rd, #(imm8)                         
+                WE_val <= '1'; 
                 mux_ctrl <= B"00";    -- immediate value  
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
                 if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
@@ -141,8 +182,9 @@ begin
                 end if;    
                 set_C <= '0';
                 flag_reg_WE <= '1';
-            when MOVS =>     -- MOVS <Rd>,<Rm> 
-                WE <= '1'; 
+                update_PC <= '0';
+            when MOVS =>            -- MOVS <Rd>,<Rm> 
+                WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
                  if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
@@ -151,8 +193,9 @@ begin
                     set_Z <= '0';
                 end if;  
                 flag_reg_WE <= '1';
-            when MOV =>     -- MOV <Rd>,<Rm> 
-                WE <= '1'; 
+                update_PC <= '0';
+            when MOV =>             -- MOV <Rd>,<Rm> 
+                WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 if (d_PC = '0') then        -- if d_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
                     set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -162,9 +205,13 @@ begin
                         set_Z <= '0';
                     end if;    
                     flag_reg_WE <= '1';
-                end if;   
+                    update_PC <= '0';
+                else
+                    flag_reg_WE <= '0';
+                    update_PC <= '1';
+            end if;   
              when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
-                WE <= '1'; 
+                WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
                 if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
@@ -185,8 +232,9 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';
-             when ADDS =>     -- ADDS <Rd>,<Rn>,<Rm>
-                WE <= '1'; 
+                 update_PC <= '0';
+            when ADDS =>     -- ADDS <Rd>,<Rn>,<Rm>
+                WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
                 if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
@@ -207,8 +255,9 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';                
-             when ADD =>     -- ADD <Rdn>,<Rm>
-                WE <= '1'; 
+                update_PC <= '0';
+            when ADD =>     -- ADD <Rdn>,<Rm>
+                WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 if (d_PC = '0') then        -- if d_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
                     set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -224,10 +273,14 @@ begin
                     else
                         set_V <= '0';
                     end if;    
-                    flag_reg_WE <= '1';                
+                    flag_reg_WE <= '1';
+                    update_PC <= '0';
+                else
+                    flag_reg_WE <= '0';
+                    update_PC <= '1';
                 end if;   
-             when ADDS_imm8 =>     -- ADDS <Rdn>,#<imm8> 
-                WE <= '1'; 
+            when ADDS_imm8 =>     -- ADDS <Rdn>,#<imm8> 
+                WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
                 if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
@@ -243,8 +296,9 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';                
-             when ADCS =>                                           -- ADCS <Rdn>,<Rm>
-                WE <= '1'; 
+                 update_PC <= '0';
+            when ADCS =>                                           -- ADCS <Rdn>,<Rm>
+                WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
                 if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
@@ -260,11 +314,12 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';                
-           
+                 update_PC <= '0';
+          
                 
                 
              when NOT_DEF =>
-                WE <= '0'; 
+                WE_val <= '0'; 
                 mux_ctrl <= B"00";
                 flag_reg_WE <= '0';
                 set_N       <= '0';
@@ -274,8 +329,9 @@ begin
                 set_EN      <= (others => '0');
                 set_T       <= '0';
                 temp_overflow <= (others => '0');
-            when others  => 
-                WE <= '0'; 
+                update_PC <= '0';
+           when others  => 
+                WE_val <= '0'; 
                 mux_ctrl <= B"00";
                 flag_reg_WE <= '0';
                 set_N       <= '0';
@@ -285,7 +341,14 @@ begin
                 set_EN      <= (others => '0');
                 set_T       <= '0';       
                 temp_overflow <= (others => '0');        
-        end case;       
+                update_PC <= '0';
+       end case;  
+      -- else
+           -- PC is updated, so do not execute the current command
+           
+            
+      -- end if;
+            
      end process;
      
     alu_p: process  (command, operand_A, imm8_z_ext) begin
@@ -307,6 +370,14 @@ begin
 
      alu_result <= std_logic_vector(alu_temp(31 downto 0));
      result <= result_final;
+     
+--     WE_p: process (WE_val, inst_invalid_value) begin
+--        if (inst_invalid_value = '1') then
+--            WE <= '0';
+--        else
+--            WE <= WE_val;
+--        end if;        
+--     end process;
 
 
 end Behavioral;

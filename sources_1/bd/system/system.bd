@@ -5,17 +5,17 @@
       "device": "xczu7ev-ffvc1156-2-e",
       "name": "system",
       "synth_flow_mode": "Hierarchical",
-      "tool_version": "2018.3",
+      "tool_version": "2019.2",
       "validated": "true"
     },
     "design_tree": {
       "BRAM_32KB_0": "",
       "clk_wiz_0": "",
-      "xlslice_0": "",
-      "xlslice_1": "",
       "constant_1": "",
       "constant_0": "",
       "constant_0_16bit": "",
+      "xlslice_0": "",
+      "xlslice_1": "",
       "cortex_m0_core_0": ""
     },
     "interface_ports": {
@@ -153,6 +153,31 @@
           }
         }
       },
+      "constant_1": {
+        "vlnv": "xilinx.com:ip:xlconstant:1.1",
+        "xci_name": "system_xlconstant_0_0"
+      },
+      "constant_0": {
+        "vlnv": "xilinx.com:ip:xlconstant:1.1",
+        "xci_name": "system_xlconstant_0_1",
+        "parameters": {
+          "CONST_VAL": {
+            "value": "0"
+          }
+        }
+      },
+      "constant_0_16bit": {
+        "vlnv": "xilinx.com:ip:xlconstant:1.1",
+        "xci_name": "system_xlconstant_0_2",
+        "parameters": {
+          "CONST_VAL": {
+            "value": "0"
+          },
+          "CONST_WIDTH": {
+            "value": "16"
+          }
+        }
+      },
       "xlslice_0": {
         "vlnv": "xilinx.com:ip:xlslice:1.0",
         "xci_name": "system_xlslice_0_0",
@@ -183,31 +208,6 @@
           },
           "DOUT_WIDTH": {
             "value": "15"
-          }
-        }
-      },
-      "constant_1": {
-        "vlnv": "xilinx.com:ip:xlconstant:1.1",
-        "xci_name": "system_xlconstant_0_0"
-      },
-      "constant_0": {
-        "vlnv": "xilinx.com:ip:xlconstant:1.1",
-        "xci_name": "system_xlconstant_0_1",
-        "parameters": {
-          "CONST_VAL": {
-            "value": "0"
-          }
-        }
-      },
-      "constant_0_16bit": {
-        "vlnv": "xilinx.com:ip:xlconstant:1.1",
-        "xci_name": "system_xlconstant_0_2",
-        "parameters": {
-          "CONST_VAL": {
-            "value": "0"
-          },
-          "CONST_WIDTH": {
-            "value": "16"
           }
         }
       },
@@ -257,6 +257,20 @@
               }
             }
           },
+          "HRDATA": {
+            "direction": "I",
+            "left": "31",
+            "right": "0"
+          },
+          "HREADY": {
+            "direction": "I"
+          },
+          "HRESP": {
+            "direction": "I"
+          },
+          "NMI": {
+            "direction": "I"
+          },
           "IRQ": {
             "type": "intr",
             "direction": "I",
@@ -272,20 +286,6 @@
                 "value_src": "constant"
               }
             }
-          },
-          "HRDATA": {
-            "direction": "I",
-            "left": "31",
-            "right": "0"
-          },
-          "HREADY": {
-            "direction": "I"
-          },
-          "HRESP": {
-            "direction": "I"
-          },
-          "NMI": {
-            "direction": "I"
           },
           "RXEV": {
             "direction": "I"

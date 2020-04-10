@@ -114,12 +114,23 @@ architecture Behavioral of cortex_m0_core is
              operand_A : in std_logic_vector(31 downto 0);	
              operand_B : in std_logic_vector(31 downto 0);	
              command: in executor_cmds_t;	
-             --command: in std_logic_vector(4 downto 0);
              imm8_z_ext : in  std_logic_vector(31 downto 0);
              d_PC : in std_logic;
+             state: in core_state_t;
+             PC_updated: out std_logic;
              result : out std_logic_vector(31 downto 0);
              WE: out std_logic
          );
+    end component;
+    
+    component core_state is
+        Port (
+            clk : in std_logic;
+            reset : in std_logic;
+            run : in std_logic;
+            PC_updated : in std_logic;
+            state : out core_state_t
+        );
     end component;
     
     -- Declare clock interface
@@ -138,11 +149,15 @@ architecture Behavioral of cortex_m0_core is
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
     signal PC:  STD_LOGIC_VECTOR (31 downto 0);
     signal PC_VALUE:  STD_LOGIC_VECTOR (31 downto 0);
+    signal PC_plus_4:  STD_LOGIC_VECTOR (31 downto 0);
     signal internal_reset: std_logic := '1';
     signal run: std_logic := '0'; 
     signal load_current_inst_permitted: std_logic := '0'; 
     signal thumb: std_logic := '0';
     signal valid: std_logic := '0';
+    signal decode_phase : std_logic;     
+    signal decode_phase_value : std_logic;     
+    
 	
 	
 	-- Registers
@@ -162,11 +177,13 @@ architecture Behavioral of cortex_m0_core is
 	-- executor signals
     signal command:  executor_cmds_t := NOT_DEF;
     signal command_value:  executor_cmds_t := NOT_DEF;
---    signal command:  STD_LOGIC_VECTOR (4 downto 0);
---    signal command_value:  STD_LOGIC_VECTOR (4 downto 0);
     signal result:  STD_LOGIC_VECTOR (31 downto 0);
 	signal d_PC :  std_logic := '0';	
 	signal d_PC_value :  std_logic := '0';	
+	signal PC_updated :  std_logic;	
+	
+	-- core state signals
+	signal m0_core_state: core_state_t; 
     
   
 
@@ -223,9 +240,19 @@ begin
              command => command, 	
              imm8_z_ext => imm8_z_ext,
              d_PC => d_PC,
+             state => m0_core_state,
+             PC_updated => PC_updated,
              result => result,
              WE => WE
          );
+         
+    m0_core_state_m: core_state port map (
+            clk => HCLK,
+            reset => internal_reset,
+            run => run,
+            PC_updated => PC_updated,
+            state => m0_core_state
+        ); 
     
     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -233,44 +260,93 @@ begin
             load_current_inst_permitted <= run; 
         end if;
     end process;
-    
 
-    -- Drives the PC
+
+     run_p: process (HCLK) begin
+        if (rising_edge(HCLK)) then    
+            run <= not internal_reset;
+        end if;    
+     end process;       
+    
+     -- Drives the PC   
     drive_pc_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
-            if (internal_reset = '0') then  
-                PC <= PC_VALUE; 
-                run <= '1';
-                Select_Inst_A_B <= not Select_Inst_A_B;
+            PC <= PC_value;
+        end if;
+    end process;
+    
+    PC_plus_4 <=  STD_LOGIC_VECTOR (unsigned (PC) + 4);
+    
+    decode_phase_p: process (HCLK) begin
+        if (rising_edge(HCLK)) then
+            if (run = '1') then
+                decode_phase <= decode_phase_value;
             else
-                PC <= (others => '0');
-                run <= '0';
-                Select_Inst_A_B <= '0';
-            end if;
+                decode_phase <= '0';
+            end if;    
         end if;
     end process;
 
-    Select_Inst_A_B_p: process  (HCLK) begin
+    decode_phase_value_p: process (decode_phase) begin
+                decode_phase_value <= not decode_phase;
+    end process;
+    
+    pc_value_p: process  (HCLK) begin
         if (rising_edge(HCLK)) then
-            if (internal_reset = '0') then  
-                if (run = '1' and load_current_inst_permitted = '1') then  
-                    if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then 
-                        if (Select_Inst_A_B = '0') then 
-                            current_instruction <= inst_A_2nd_half & inst_A_1st_half;
+            case (m0_core_state) is
+                when s_RESET =>   
+                    if (internal_reset = '1') then
+                        PC_VALUE <= x"0000_0000";    -- zero    
+                    else 
+                        if (run = '1') then 
+                            PC_VALUE <= x"0000_0004";    -- 4
                         else
-                            current_instruction <= inst_B_2nd_half & inst_B_1st_half;
-                        end if;
+                            PC_VALUE <= x"0000_0000";    -- 4
+                        end if;    
+                    end if;    
+                when s_EXEC_INSTA_START =>      PC_VALUE <= x"0000_0004";
+                when s_EXEC_INSTA =>
+                    if (PC_updated = '1') then
+                        PC_VALUE <= result;         -- Result
                     else
-                        if (Select_Inst_A_B = '0') then 
-                            current_instruction <= inst_A_1st_half & inst_A_2nd_half;
-                        else
-                            current_instruction <= inst_B_1st_half & inst_B_2nd_half;
-                        end if;
+                        PC_VALUE <= PC_VALUE;       -- No change  
                     end if;
-                end if;    
-            else
-                current_instruction <= (others => '0');
-            end if;
+                when s_EXEC_INSTB => 
+                    if (PC_updated = '1') then
+                        PC_VALUE <= result;         -- Result
+                    else
+                        PC_VALUE <= PC_plus_4;      -- PC + 4
+                    end if;
+                when s_PC_UPDATED_INVALID =>    PC_VALUE <= PC_VALUE;       -- No change
+                when s_EXEC_INSTA_INVALID =>    PC_VALUE <= PC_VALUE;       -- No change
+                when s_EXEC_INSTB_INVALID =>    PC_VALUE <= PC_plus_4;      -- PC + 4
+                when others =>                  PC_VALUE <= x"0000_0000"; 
+            end case;
+         end if;
+     end process;
+    
+
+    Select_Inst_A_B_p: process  (internal_reset, run, m0_core_state, inst_A_2nd_half, inst_A_1st_half, inst_B_2nd_half, inst_B_1st_half) begin
+        if (internal_reset = '0') then  
+            if (run = '1') then  
+                if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then 
+                    if (m0_core_state = s_EXEC_INSTA or m0_core_state = s_EXEC_INSTA_START or m0_core_state = s_EXEC_INSTA_INVALID) then 
+                        current_instruction <= inst_A_2nd_half & inst_A_1st_half;
+                    elsif (m0_core_state = s_EXEC_INSTB or m0_core_state = s_EXEC_INSTA_INVALID) then
+                        current_instruction <= inst_B_2nd_half & inst_B_1st_half;
+                    else
+                        current_instruction <= (others => '0');    
+                    end if;
+                else
+                    if (m0_core_state = s_EXEC_INSTA or m0_core_state = s_EXEC_INSTA_START or m0_core_state = s_EXEC_INSTA_INVALID) then 
+                        current_instruction <= inst_A_1st_half & inst_A_2nd_half;
+                    elsif (m0_core_state = s_EXEC_INSTB or m0_core_state = s_EXEC_INSTA_INVALID) then
+                        current_instruction <= inst_B_1st_half & inst_B_2nd_half;
+                    else
+                        current_instruction <= (others => '0'); 
+                    end if;
+                end if;
+            end if;    
         end if;
     end process;
     
@@ -287,17 +363,7 @@ begin
         end if;
     end process;
 
-    pc_value_p: process  (HCLK) begin
-        if (rising_edge(HCLK)) then
-            if (internal_reset = '0') then
-                if (run = '1' and  Select_Inst_A_B = '1') then 
-                    PC_VALUE <= STD_LOGIC_VECTOR (unsigned (PC_VALUE) + 4);
-                end if;
-            else
-                PC_VALUE <= (others => '0');
-            end if;
-        end if;
-    end process;
+   
     
      imm8_z_ext_value_p: process  (command_value, imm8) begin
         case (command_value) is
@@ -350,8 +416,8 @@ begin
                 cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;    
             elsif std_match(current_instruction(15 downto 9), "0001100") then                  -- ADDS <Rd>,<Rn>,<Rm>  
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));
                 cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";    
             elsif std_match(current_instruction(15 downto 8), "01000100") then                  -- ADD <Rdn>,<Rm>  
                 Rd_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));

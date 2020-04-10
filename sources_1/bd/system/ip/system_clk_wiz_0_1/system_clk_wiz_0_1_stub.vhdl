@@ -1,10 +1,10 @@
--- Copyright 1986-2018 Xilinx, Inc. All Rights Reserved.
+-- Copyright 1986-2019 Xilinx, Inc. All Rights Reserved.
 -- --------------------------------------------------------------------------------
--- Tool Version: Vivado v.2018.3 (lin64) Build 2405991 Thu Dec  6 23:36:41 MST 2018
--- Date        : Sun Mar 22 17:45:12 2020
--- Host        : esi-OMEN-by-HP-Laptop-15-dc0xxx running 64-bit Ubuntu 19.04
+-- Tool Version: Vivado v.2019.2 (win64) Build 2708876 Wed Nov  6 21:40:23 MST 2019
+-- Date        : Thu Apr  9 20:19:20 2020
+-- Host        : DESKTOP-GB8O8RC running 64-bit major release  (build 9200)
 -- Command     : write_vhdl -force -mode synth_stub
---               /home/esi/workspace/Vivado_2018.3/zcu104/Cortex_M0/Cortex_M0.srcs/sources_1/bd/system/ip/system_clk_wiz_0_1/system_clk_wiz_0_1_stub.vhdl
+--               D:/workspace/Vivado_2019.2/Cortex_M0/Cortex_M0.srcs/sources_1/bd/system/ip/system_clk_wiz_0_1/system_clk_wiz_0_1_stub.vhdl
 -- Design      : system_clk_wiz_0_1
 -- Purpose     : Stub declaration of top-level module interface
 -- Device      : xczu7ev-ffvc1156-2-e

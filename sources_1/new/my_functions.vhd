@@ -34,10 +34,23 @@ use IEEE.STD_LOGIC_1164.ALL;
 package helper_funcs is
     function conv_to_string ( a: std_logic_vector) return string;
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
+
+    type core_state_t is (
+        s_RESET, 
+        s_EXEC_INSTA_START, 
+        s_EXEC_INSTA, 
+        s_EXEC_INSTB, 
+        s_PC_UPDATED_INVALID,
+        s_EXEC_INSTA_INVALID,
+        s_EXEC_INSTB_INVALID   
+        );
+
     type executor_cmds_t is (
         MOVS_imm8, MOVS, MOV, 
         ADDS_imm3, ADDS, ADD, ADDS_imm8, ADCS,
-        NOT_DEF);  -- Executor commands
+        NOT_DEF
+        );  -- Executor commands
+
 end  helper_funcs;
 
 package body helper_funcs is
