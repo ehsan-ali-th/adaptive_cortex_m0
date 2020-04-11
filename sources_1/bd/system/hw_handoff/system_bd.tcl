@@ -184,12 +184,22 @@ proc create_root_design { parentCell } {
    CONFIG.Coe_File {../../../../program.coe} \
    CONFIG.EN_SAFETY_CKT {false} \
    CONFIG.Enable_32bit_Address {false} \
-   CONFIG.Fill_Remaining_Memory_Locations {true} \
+   CONFIG.Enable_B {Always_Enabled} \
+   CONFIG.Fill_Remaining_Memory_Locations {false} \
    CONFIG.Load_Init_File {true} \
+   CONFIG.Memory_Type {Single_Port_RAM} \
+   CONFIG.Port_B_Clock {0} \
+   CONFIG.Port_B_Enable_Rate {0} \
+   CONFIG.Port_B_Write_Rate {0} \
+   CONFIG.Read_Width_A {32} \
+   CONFIG.Read_Width_B {32} \
    CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
+   CONFIG.Register_PortB_Output_of_Memory_Primitives {false} \
    CONFIG.Use_Byte_Write_Enable {false} \
    CONFIG.Use_RSTA_Pin {false} \
    CONFIG.Write_Depth_A {32768} \
+   CONFIG.Write_Width_A {32} \
+   CONFIG.Write_Width_B {32} \
    CONFIG.use_bram_block {Stand_Alone} \
  ] $BRAM_32KB_0
 

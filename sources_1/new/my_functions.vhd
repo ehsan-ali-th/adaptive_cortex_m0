@@ -42,12 +42,13 @@ package helper_funcs is
         s_EXEC_INSTB, 
         s_PC_UPDATED_INVALID,
         s_EXEC_INSTA_INVALID,
-        s_EXEC_INSTB_INVALID   
+        s_EXEC_INSTB_INVALID,
+        s_PC_UNALIGNED   
         );
 
     type executor_cmds_t is (
         MOVS_imm8, MOVS, MOV, 
-        ADDS_imm3, ADDS, ADD, ADDS_imm8, ADCS,
+        ADDS_imm3, ADDS, ADD, ADD_PC,  ADDS_imm8, ADCS,
         NOT_DEF
         );  -- Executor commands
 

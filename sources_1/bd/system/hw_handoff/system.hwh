@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
-<EDKSYSTEM EDWVERSION="1.2" TIMESTAMP="Fri Apr 10 04:04:53 2020" VIVADOVERSION="2019.2">
+<EDKSYSTEM EDWVERSION="1.2" TIMESTAMP="Sun Apr 12 02:39:45 2020" VIVADOVERSION="2019.2">
 
   <SYSTEMINFO ARCH="zynquplus" BOARD="xilinx.com:zcu104:part0:1.1" DEVICE="xczu7ev" NAME="system" PACKAGE="ffvc1156" SPEEDGRADE="-2"/>
 
@@ -66,7 +66,7 @@
         <PARAMETER NAME="C_LOAD_INIT_FILE" VALUE="1"/>
         <PARAMETER NAME="C_INIT_FILE_NAME" VALUE="system_blk_mem_gen_0_2.mif"/>
         <PARAMETER NAME="C_INIT_FILE" VALUE="NONE"/>
-        <PARAMETER NAME="C_USE_DEFAULT_DATA" VALUE="1"/>
+        <PARAMETER NAME="C_USE_DEFAULT_DATA" VALUE="0"/>
         <PARAMETER NAME="C_DEFAULT_DATA" VALUE="0"/>
         <PARAMETER NAME="C_HAS_RSTA" VALUE="0"/>
         <PARAMETER NAME="C_RST_PRIORITY_A" VALUE="CE"/>
@@ -168,7 +168,7 @@
         <PARAMETER NAME="Pipeline_Stages" VALUE="0"/>
         <PARAMETER NAME="Load_Init_File" VALUE="true"/>
         <PARAMETER NAME="Coe_File" VALUE="../../../../program.coe"/>
-        <PARAMETER NAME="Fill_Remaining_Memory_Locations" VALUE="true"/>
+        <PARAMETER NAME="Fill_Remaining_Memory_Locations" VALUE="false"/>
         <PARAMETER NAME="Remaining_Memory_Locations" VALUE="0"/>
         <PARAMETER NAME="Use_RSTA_Pin" VALUE="false"/>
         <PARAMETER NAME="Reset_Memory_Latch_A" VALUE="false"/>

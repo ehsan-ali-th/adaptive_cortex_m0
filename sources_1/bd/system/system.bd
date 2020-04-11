@@ -80,10 +80,25 @@
             "value": "false"
           },
           "Fill_Remaining_Memory_Locations": {
-            "value": "true"
+            "value": "false"
           },
           "Load_Init_File": {
             "value": "true"
+          },
+          "Memory_Type": {
+            "value": "Single_Port_RAM"
+          },
+          "Port_B_Clock": {
+            "value": "0"
+          },
+          "Port_B_Enable_Rate": {
+            "value": "0"
+          },
+          "Port_B_Write_Rate": {
+            "value": "0"
+          },
+          "Read_Width_A": {
+            "value": "32"
           },
           "Register_PortA_Output_of_Memory_Primitives": {
             "value": "false"
@@ -96,6 +111,9 @@
           },
           "Write_Depth_A": {
             "value": "32768"
+          },
+          "Write_Width_A": {
+            "value": "32"
           },
           "use_bram_block": {
             "value": "Stand_Alone"

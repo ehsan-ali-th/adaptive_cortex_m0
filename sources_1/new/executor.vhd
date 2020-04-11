@@ -43,7 +43,7 @@ entity executor is
          operand_B : in std_logic_vector(31 downto 0);	
          command: in executor_cmds_t;	
          imm8_z_ext : in  std_logic_vector(31 downto 0);
-         d_PC : in std_logic;
+         destination_is_PC : in std_logic;
          state: in core_state_t;
          PC_updated: out std_logic;
          result : out std_logic_vector(31 downto 0);
@@ -52,15 +52,6 @@ entity executor is
 end executor;
 
 architecture Behavioral of executor is
-
-    component pipeline_invalidator is
-        Port ( 
-            clk : in std_logic;
-            reset : in std_logic;
-            pc_updated : in std_logic;
-            pipeline_is_invalid: out std_logic
-        );
-    end component;
 
   component status_flags is
         Port (
@@ -107,16 +98,10 @@ architecture Behavioral of executor is
     signal WE_val : std_logic;
     signal pipeline_is_invalid : std_logic;
     signal update_PC : std_logic;
+    signal current_instruction_mem_location :  std_logic_vector (31 downto 0);
     
 
 begin
-
-    c0_pipeline_invalidator: pipeline_invalidator port map ( 
-            clk => clk,
-            reset => reset,
-            pc_updated => d_PC,
-            pipeline_is_invalid =>  pipeline_is_invalid
-        );
 
     c0_flags: status_flags port map (
             clk => clk,
@@ -136,7 +121,7 @@ begin
             RT  => T_flag
         );
         
-    PC_updated <= d_PC;
+    PC_updated <= destination_is_PC;
         
     gp_data_in_p: process  (run, imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
         if (run = '1') then 
@@ -161,7 +146,10 @@ begin
 --    end process;
 
     WE_p: process  (WE_val, state) begin
-        if (state = s_PC_UPDATED_INVALID or state = s_EXEC_INSTA_INVALID or state = s_EXEC_INSTB_INVALID) then
+        if (state = s_PC_UPDATED_INVALID or 
+            state = s_EXEC_INSTA_INVALID or 
+            state = s_EXEC_INSTB_INVALID or 
+            state = s_PC_UNALIGNED) then
             WE <= '0';
         else
             WE <= WE_val;
@@ -169,7 +157,6 @@ begin
     end process;
  
     execution_p: process  (command, result_final, alu_result, operand_A, operand_B, imm8_z_ext) begin
-      --if (inst_invalid = '0') then 
         case (command) is
             when MOVS_imm8 =>       -- MOVS Rd, #(imm8)                         
                 WE_val <= '1'; 
@@ -194,10 +181,10 @@ begin
                 end if;  
                 flag_reg_WE <= '1';
                 update_PC <= '0';
-            when MOV =>             -- MOV <Rd>,<Rm> 
+            when MOV =>             -- MOV <Rd>,<Rm> , MOV PC, Rm
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
-                if (d_PC = '0') then        -- if d_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
+                if (destination_is_PC = '0') then        -- if destination_is_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
                     set_N <= result_final(31);                          -- APSR.N = result<31>;
                     if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
                         set_Z <= '1';
@@ -256,29 +243,31 @@ begin
                 end if;    
                 flag_reg_WE <= '1';                
                 update_PC <= '0';
-            when ADD =>     -- ADD <Rdn>,<Rm>
+            when ADD =>     -- ADD <Rdn>,<Rm> - ADD PC,<Rm>
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
-                if (d_PC = '0') then        -- if d_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
-                    set_N <= result_final(31);                          -- APSR.N = result<31>;
-                    if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
-                        set_Z <= '1';
-                    else
-                        set_Z <= '0';
-                    end if;    
-                    set_C <= std_logic(alu_temp(32));
-                    temp_overflow <= operand_A(31) & operand_B(31) & alu_result(31);
-                    if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
-                        set_V <= '1';
-                    else
-                        set_V <= '0';
-                    end if;    
-                    flag_reg_WE <= '1';
-                    update_PC <= '0';
+                -- When command = ADD we know that destination_is_PC is 0.  
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
                 else
-                    flag_reg_WE <= '0';
-                    update_PC <= '1';
-                end if;   
+                    set_Z <= '0';
+                end if;    
+                set_C <= std_logic(alu_temp(32));
+                temp_overflow <= operand_A(31) & operand_B(31) & alu_result(31);
+                if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
+                    set_V <= '1';
+                else
+                    set_V <= '0';
+                end if;    
+                -- it means d == 15 (destination is PC) then setflags is always FALSE  
+                flag_reg_WE <= '1';
+                update_PC <= '0';
+            when ADD_PC =>    
+                WE_val <= '0'; 
+                mux_ctrl <= B"11";          -- alu_result
+                flag_reg_WE <= '0';
+                update_PC <= '1';
             when ADDS_imm8 =>     -- ADDS <Rdn>,#<imm8> 
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
@@ -343,22 +332,19 @@ begin
                 temp_overflow <= (others => '0');        
                 update_PC <= '0';
        end case;  
-      -- else
-           -- PC is updated, so do not execute the current command
-           
-            
-      -- end if;
-            
      end process;
      
-    alu_p: process  (command, operand_A, imm8_z_ext) begin
+    alu_p: process  (command, state, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, C_flag) begin
         case (command) is
             when ADDS_imm3 =>       -- ADDS <Rd>,<Rn>,#<imm3>
                 alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & imm8_z_ext);    -- AddWithCarry(R[n], imm32, '0');
             when ADDS =>            -- ADDS <Rd>,<Rn>,<Rm>
                 alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AddWithCarry(R[n], shifted, '0');
             when ADD =>             -- ADD <Rdn>,<Rm>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AAddWithCarry(R[n], shifted, ‘0’);
+                alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AAddWithCarry(R[n], shifted, '0');
+            when ADD_PC =>             -- ADD PC, <Rm>
+                alu_temp <= (unsigned ('0' & current_instruction_mem_location) + unsigned('0' & operand_B) + 2)
+                    and B"1_1111_1111_1111_1111_1111_1111_1111_1110";     -- AAddWithCarry(R[n], shifted, '0');
             when ADDS_imm8 =>       -- ADDS <Rdn>,#<imm8>
                 alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & imm8_z_ext);    -- AddWithCarry(R[n], imm32, '0');                
             when ADCS =>            -- ADCS <Rdn>,<Rm>
@@ -371,13 +357,19 @@ begin
      alu_result <= std_logic_vector(alu_temp(31 downto 0));
      result <= result_final;
      
---     WE_p: process (WE_val, inst_invalid_value) begin
---        if (inst_invalid_value = '1') then
---            WE <= '0';
---        else
---            WE <= WE_val;
---        end if;        
---     end process;
+    -- If core is at state s_EXEC_INSTA then the current memory address of the currect instruction is PC.
+    --  but if the core is at state s_EXEC_INSTB then current memory address of the currect instruction is PC - 2
+    -- The to PC instrution adds to current memory location which must be calculates based on the observations stated above.
+    current_instruction_mem_location_p: process (state, operand_A) begin
+        if (state = s_EXEC_INSTA) then
+            current_instruction_mem_location <= operand_A;    -- OperanA will carry the PC if update_PC signal is activated
+        else
+            current_instruction_mem_location <= STD_LOGIC_VECTOR (unsigned (operand_A) + 2);
+        end if;
+    end process;
+    
+    
+ 
 
 
 end Behavioral;

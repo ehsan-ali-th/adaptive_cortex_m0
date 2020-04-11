@@ -40,6 +40,7 @@ entity core_state is
         reset : in std_logic;
         run : in std_logic;
         PC_updated : in std_logic;
+        PC_2bit_LSB :  std_logic_vector(1 downto 0);
         state : out core_state_t
         
     );
@@ -87,9 +88,23 @@ begin
                     m0_core_next_state <= s_PC_UPDATED_INVALID;
                 end if;  
             when s_PC_UPDATED_INVALID => m0_core_next_state <= s_EXEC_INSTB_INVALID;
-            when s_EXEC_INSTA_INVALID => m0_core_next_state <= s_EXEC_INSTB;
+            when s_EXEC_INSTA_INVALID => 
+                -- PC can only be unaligned if the user loads a value into the PC.
+                -- The following instructions update the PC:
+                -- 
+                -- MOV PC, Rm
+                -- ADD PC,<Rm>
+                --
+                -- In those case the pipeline gets invalidated and then it jumps to new PC to fetch data.
+                -- Always the last invalid state is s_EXEC_INSTA_INVALID. So if the Pc is unaligned we 
+                -- just need to extend the pipeline invalid state one more cycle.
+                if (PC_2bit_LSB = B"00") then
+                    m0_core_next_state <= s_EXEC_INSTB;
+                else
+                    m0_core_next_state <= s_PC_UNALIGNED;
+                end if;
             when s_EXEC_INSTB_INVALID => m0_core_next_state <= s_EXEC_INSTA_INVALID;
-                
+            when s_PC_UNALIGNED => m0_core_next_state <= s_EXEC_INSTA;
             when others => m0_core_next_state <= s_RESET;
         end case;
 end process;
