@@ -219,7 +219,7 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';
-                 update_PC <= '0';
+                update_PC <= '0';
             when ADDS =>     -- ADDS <Rd>,<Rn>,<Rm>
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
@@ -243,7 +243,7 @@ begin
                 end if;    
                 flag_reg_WE <= '1';                
                 update_PC <= '0';
-            when ADD =>     -- ADD <Rdn>,<Rm> - ADD PC,<Rm>
+            when ADD =>     -- ADD <Rdn>,<Rm> 
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 -- When command = ADD we know that destination_is_PC is 0.  
@@ -263,7 +263,7 @@ begin
                 -- it means d == 15 (destination is PC) then setflags is always FALSE  
                 flag_reg_WE <= '1';
                 update_PC <= '0';
-            when ADD_PC =>    
+            when ADD_PC =>    -- ADD PC,<Rm>
                 WE_val <= '0'; 
                 mux_ctrl <= B"11";          -- alu_result
                 flag_reg_WE <= '0';
@@ -285,7 +285,7 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';                
-                 update_PC <= '0';
+                update_PC <= '0';
             when ADCS =>                                           -- ADCS <Rdn>,<Rm>
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
@@ -303,7 +303,53 @@ begin
                     set_V <= '0';
                 end if;    
                 flag_reg_WE <= '1';                
-                 update_PC <= '0';
+                update_PC <= '0';
+            when SUBS =>                                            -- SUBS <Rd>,<Rn>,<Rm>
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
+                else
+                    set_Z <= '0';
+                end if;    
+                set_C <= std_logic(alu_temp(32));
+                -- how to calculate overflow:
+                -- There are two cases where the overflow flag would be turned on during a binary arithmetic operation:
+                -- 1) The inputs both have sign bits that are off, while the result has a sign bit that is on.
+                -- 2) The inputs both have sign bits that are on, while the result has a sign bit that is off.
+                -- concat the three relevant sign-bits to one vector
+                temp_overflow <= operand_A(31) & operand_B(31) & alu_result(31);
+                if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
+                    set_V <= '1';
+                else
+                    set_V <= '0';
+                end if;    
+                flag_reg_WE <= '1';                
+                update_PC <= '0';
+            when SUBS_imm3 =>                                       -- SUBS <Rd>,<Rn>,#<imm3>
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
+                else
+                    set_Z <= '0';
+                end if;    
+                set_C <= std_logic(alu_temp(32));
+                -- how to calculate overflow:
+                -- There are two cases where the overflow flag would be turned on during a binary arithmetic operation:
+                -- 1) The inputs both have sign bits that are off, while the result has a sign bit that is on.
+                -- 2) The inputs both have sign bits that are on, while the result has a sign bit that is off.
+                -- concat the three relevant sign-bits to one vector
+                temp_overflow <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
+                    set_V <= '1';
+                else
+                    set_V <= '0';
+                end if;    
+                flag_reg_WE <= '1';
+                update_PC <= '0';   
           
                 
                 
@@ -342,13 +388,18 @@ begin
                 alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AddWithCarry(R[n], shifted, '0');
             when ADD =>             -- ADD <Rdn>,<Rm>
                 alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AAddWithCarry(R[n], shifted, '0');
-            when ADD_PC =>             -- ADD PC, <Rm>
+            when ADD_PC =>          -- ADD PC, <Rm>
                 alu_temp <= (unsigned ('0' & current_instruction_mem_location) + unsigned('0' & operand_B) + 2)
                     and B"1_1111_1111_1111_1111_1111_1111_1111_1110";     -- AAddWithCarry(R[n], shifted, '0');
             when ADDS_imm8 =>       -- ADDS <Rdn>,#<imm8>
                 alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & imm8_z_ext);    -- AddWithCarry(R[n], imm32, '0');                
             when ADCS =>            -- ADCS <Rdn>,<Rm>
-                alu_temp <= ((unsigned ('0' & operand_A) + unsigned('0' & operand_B)) + C_flag) ;     --AddWithCarry(R[n], shifted, APSR.C);                
+                alu_temp <= ((unsigned ('0' & operand_A) + unsigned('0' & operand_B)) + C_flag) ;     --AddWithCarry(R[n], shifted, APSR.C);  
+            when SUBS_imm3 =>       -- SUBS <Rd>,<Rn>,#<imm3>
+                alu_temp <= unsigned ('0' & operand_A) + unsigned(not ('0' & imm8_z_ext)) + 1;    -- AddWithCarry(R[n], imm32, '1');
+            when SUBS =>            -- SUBS <Rd>,<Rn>,<Rm>
+                alu_temp <= unsigned ('0' & operand_A) + unsigned(not ('0' & operand_B)) + 1;     -- AddWithCarry(R[n], shifted, '1'); 
+                             
             when others  =>
                 alu_temp <= (others => '0');
         end case;       

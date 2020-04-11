@@ -384,6 +384,7 @@ begin
             when MOVS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when ADDS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when ADDS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when SUBS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
@@ -445,7 +446,17 @@ begin
             elsif std_match(current_instruction(15 downto 6), "0100000101") then                -- ADCS <Rdn>,<Rm>  
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                 Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "    ";    
+                cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "    ";   
+            elsif std_match(current_instruction(15 downto 9), "0001111") then                  -- SUBS <Rd>,<Rn>,#<imm3>  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;  
+            elsif std_match(current_instruction(15 downto 9), "0001101") then                  -- SUBS <Rd>,<Rn>,<Rm>  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));    
+                cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";   
             end if;
             
           if rising_edge(HCLK) then 
