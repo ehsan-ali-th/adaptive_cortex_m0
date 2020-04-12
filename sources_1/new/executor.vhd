@@ -73,6 +73,14 @@ architecture Behavioral of executor is
         );
     end component;
     
+    component mul_32x32_r32 is
+        Port ( 
+            operand_A : in std_logic_vector(31 downto 0);	
+            operand_B : in std_logic_vector(31 downto 0);	
+            result : out std_logic_vector(31 downto 0)
+        );
+    end component;
+        
       -- status flags signals
 	signal  flag_reg_WE :  std_logic;	
 	signal  set_N       :  std_logic;	
@@ -99,6 +107,7 @@ architecture Behavioral of executor is
     signal pipeline_is_invalid : std_logic;
     signal update_PC : std_logic;
     signal current_instruction_mem_location :  std_logic_vector (31 downto 0);
+    signal mul_result:  std_logic_vector (31 downto 0);
     
 
 begin
@@ -120,6 +129,13 @@ begin
             REN => EN_flag,
             RT  => T_flag
         );
+        
+    executor_mul: mul_32x32_r32  port map ( 
+            operand_A => operand_A,
+            operand_B =>  operand_B,
+            result => mul_result
+        );
+        
         
     PC_updated <= destination_is_PC;
         
@@ -158,7 +174,7 @@ begin
  
     execution_p: process  (command, result_final, alu_result, operand_A, operand_B, imm8_z_ext) begin
         case (command) is
-            when MOVS_imm8 =>       -- MOVS Rd, #(imm8)                         
+            when MOVS_imm8 =>                                       -- MOVS Rd, #(imm8)                         
                 WE_val <= '1'; 
                 mux_ctrl <= B"00";    -- immediate value  
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -170,7 +186,7 @@ begin
                 set_C <= '0';
                 flag_reg_WE <= '1';
                 update_PC <= '0';
-            when MOVS =>            -- MOVS <Rd>,<Rm> 
+            when MOVS =>                                                -- MOVS <Rd>,<Rm> 
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -181,7 +197,7 @@ begin
                 end if;  
                 flag_reg_WE <= '1';
                 update_PC <= '0';
-            when MOV =>             -- MOV <Rd>,<Rm> , MOV PC, Rm
+            when MOV =>                                                 -- MOV <Rd>,<Rm> , MOV PC, Rm
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 if (destination_is_PC = '0') then        -- if destination_is_PC = 1 it means d == 15 (destination is PC) then setflags is always FALSE  
@@ -196,8 +212,8 @@ begin
                 else
                     flag_reg_WE <= '0';
                     update_PC <= '1';
-            end if;   
-             when ADDS_imm3 =>     -- ADDS <Rd>,<Rn>,#<imm3>
+                end if;   
+            when ADDS_imm3 =>                                       -- ADDS <Rd>,<Rn>,#<imm3>
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -220,7 +236,7 @@ begin
                 end if;    
                 flag_reg_WE <= '1';
                 update_PC <= '0';
-            when ADDS =>     -- ADDS <Rd>,<Rn>,<Rm>
+            when ADDS =>                                            -- ADDS <Rd>,<Rn>,<Rm>
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -243,7 +259,7 @@ begin
                 end if;    
                 flag_reg_WE <= '1';                
                 update_PC <= '0';
-            when ADD =>     -- ADD <Rdn>,<Rm> 
+            when ADD =>                                             -- ADD <Rdn>,<Rm> 
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 -- When command = ADD we know that destination_is_PC is 0.  
@@ -286,7 +302,7 @@ begin
                 end if;    
                 flag_reg_WE <= '1';                
                 update_PC <= '0';
-            when ADCS =>                                           -- ADCS <Rdn>,<Rm>
+            when ADCS =>                                            -- ADCS <Rdn>,<Rm>
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_N <= result_final(31);                          -- APSR.N = result<31>;
@@ -350,6 +366,81 @@ begin
                 end if;    
                 flag_reg_WE <= '1';
                 update_PC <= '0';   
+             when SUBS_imm8 =>                                      -- SUBS <Rdn>,#<imm8>
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
+                else
+                    set_Z <= '0';
+                end if;    
+                set_C <= std_logic(alu_temp(32));
+                -- how to calculate overflow:
+                -- There are two cases where the overflow flag would be turned on during a binary arithmetic operation:
+                -- 1) The inputs both have sign bits that are off, while the result has a sign bit that is on.
+                -- 2) The inputs both have sign bits that are on, while the result has a sign bit that is off.
+                -- concat the three relevant sign-bits to one vector
+                temp_overflow <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
+                    set_V <= '1';
+                else
+                    set_V <= '0';
+                end if;    
+                flag_reg_WE <= '1';
+                update_PC <= '0';    
+            when SBCS =>                                            -- SBCS <Rdn>,<Rm>
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
+                else
+                    set_Z <= '0';
+                end if;    
+                set_C <= std_logic(alu_temp(32));
+                temp_overflow <= operand_A(31) & operand_B(31) & alu_result(31);
+                if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
+                    set_V <= '1';
+                else
+                    set_V <= '0';
+                end if;    
+                flag_reg_WE <= '1';                
+                update_PC <= '0';
+         when RSBS =>                                               -- RSBS <Rd>,<Rn>,#0
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
+                else
+                    set_Z <= '0';
+                end if;    
+                set_C <= std_logic(alu_temp(32));
+                -- how to calculate overflow:
+                -- There are two cases where the overflow flag would be turned on during a binary arithmetic operation:
+                -- 1) The inputs both have sign bits that are off, while the result has a sign bit that is on.
+                -- 2) The inputs both have sign bits that are on, while the result has a sign bit that is off.
+                -- concat the three relevant sign-bits to one vector
+                temp_overflow <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                if ((temp_overflow = B"001") or (temp_overflow = B"110")) then
+                    set_V <= '1';
+                else
+                    set_V <= '0';
+                end if;    
+                flag_reg_WE <= '1';
+                update_PC <= '0';    
+         when MULS =>                                               -- MULS <Rdm>,<Rn>,<Rdm>
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_N <= result_final(31);                          -- APSR.N = result<31>;
+                if (to_integer(unsigned(result_final)) = 0) then    -- APSR.Z = IsZeroBit(result);
+                    set_Z <= '1';
+                else
+                    set_Z <= '0';
+                end if;    
+                flag_reg_WE <= '1';
+                update_PC <= '0';    
           
                 
                 
@@ -380,26 +471,35 @@ begin
        end case;  
      end process;
      
-    alu_p: process  (command, state, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, C_flag) begin
+    alu_p: process  (command, state, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, mul_result, C_flag) begin
         case (command) is
             when ADDS_imm3 =>       -- ADDS <Rd>,<Rn>,#<imm3>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & imm8_z_ext);    -- AddWithCarry(R[n], imm32, '0');
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & imm8_z_ext);                    -- AddWithCarry(R[n], imm32, '0');
             when ADDS =>            -- ADDS <Rd>,<Rn>,<Rm>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AddWithCarry(R[n], shifted, '0');
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);                     -- AddWithCarry(R[n], shifted, '0');
             when ADD =>             -- ADD <Rdn>,<Rm>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & operand_B);     -- AAddWithCarry(R[n], shifted, '0');
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);                     -- AAddWithCarry(R[n], shifted, '0');
             when ADD_PC =>          -- ADD PC, <Rm>
-                alu_temp <= (unsigned ('0' & current_instruction_mem_location) + unsigned('0' & operand_B) + 2)
-                    and B"1_1111_1111_1111_1111_1111_1111_1111_1110";     -- AAddWithCarry(R[n], shifted, '0');
+                alu_temp <= (unsigned ("0" & current_instruction_mem_location) +                        -- AAddWithCarry(R[n], shifted, '0');
+                              unsigned("0" & operand_B) + 2)
+                              and B"1_1111_1111_1111_1111_1111_1111_1111_1110";                                   
             when ADDS_imm8 =>       -- ADDS <Rdn>,#<imm8>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned('0' & imm8_z_ext);    -- AddWithCarry(R[n], imm32, '0');                
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & imm8_z_ext);                    -- AddWithCarry(R[n], imm32, '0');                
             when ADCS =>            -- ADCS <Rdn>,<Rm>
-                alu_temp <= ((unsigned ('0' & operand_A) + unsigned('0' & operand_B)) + C_flag) ;     --AddWithCarry(R[n], shifted, APSR.C);  
+                alu_temp <= ((unsigned ("0" & operand_A) + unsigned("0" & operand_B)) + C_flag) ;       --AddWithCarry(R[n], shifted, APSR.C);  
             when SUBS_imm3 =>       -- SUBS <Rd>,<Rn>,#<imm3>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned(not ('0' & imm8_z_ext)) + 1;    -- AddWithCarry(R[n], imm32, '1');
+                alu_temp <= unsigned ("0" & operand_A) + unsigned(not ("0" & imm8_z_ext)) + 1;          -- AddWithCarry(R[n], NOT(imm32), '1');
             when SUBS =>            -- SUBS <Rd>,<Rn>,<Rm>
-                alu_temp <= unsigned ('0' & operand_A) + unsigned(not ('0' & operand_B)) + 1;     -- AddWithCarry(R[n], shifted, '1'); 
-                             
+                alu_temp <= unsigned ("0" & operand_A) + unsigned(not ("0" & operand_B)) + 1;           -- AddWithCarry(R[n], NOT(shifted), '1'); 
+            when SUBS_imm8 =>       -- SUBS <Rdn>,#<imm8>
+                alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & imm8_z_ext)) + 1;           -- AddWithCarry(R[n], NOT(imm32), '1');   
+            when SBCS =>            -- SBCS <Rdn>,<Rm>
+                alu_temp <=                                                                             -- AddWithCarry(R[n], NOT(shifted), APSR.C);        
+                    ((unsigned ("0" & operand_A) + unsigned(not("0" & operand_B))) + not (C_flag)) ;       
+            when RSBS =>            -- RSBS <Rd>,<Rn>,#0
+                alu_temp <= unsigned (not('0' & operand_A)) + 1;                                        -- AddWithCarry(NOT(R[n]), imm32, '1');                               
+            when MULS =>            -- MULS <Rdm>,<Rn>,<Rdm>
+                alu_temp <= unsigned("0" & mul_result);                                                -- result = operand1 * operand2;                               
             when others  =>
                 alu_temp <= (others => '0');
         end case;       

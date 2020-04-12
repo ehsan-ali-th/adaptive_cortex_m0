@@ -385,6 +385,7 @@ begin
             when ADDS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when ADDS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when SUBS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when SUBS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
@@ -457,6 +458,23 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                 Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));    
                 cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";   
+            elsif std_match(current_instruction(15 downto 11), "00111") then                    -- SUBS <Rdn>,#<imm8>  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
+                imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
+                imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
+                cortex_m0_opcode <= "SUBS " & Rd_decode & "," & imm8_decode & "   ";    
+            elsif std_match(current_instruction(15 downto 6), "0100000110") then                -- SBCS <Rdn>,<Rm>  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                cortex_m0_opcode <= "SBCS " & Rd_decode & "," & Rm_decode & "    ";   
+            elsif std_match(current_instruction(15 downto 6), "0100001001") then                -- RSBS <Rd>,<Rn>,#0  
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                cortex_m0_opcode <= "RSBS " & Rd_decode & "," & Rn_decode & "    ";   
+            elsif std_match(current_instruction(15 downto 6), "0100001101") then                -- MULS <Rdm>,<Rn>,<Rdm>
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                cortex_m0_opcode <= "MULS " & Rd_decode & "," & Rn_decode & "," & Rd_decode & " ";   
             end if;
             
           if rising_edge(HCLK) then 

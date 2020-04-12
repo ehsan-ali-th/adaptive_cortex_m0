@@ -49,7 +49,9 @@ package helper_funcs is
     type executor_cmds_t is (
         MOVS_imm8, MOVS, MOV, 
         ADDS_imm3, ADDS, ADD, ADD_PC,  ADDS_imm8, ADCS,
-        SUBS_imm3, SUBS,
+        SUBS_imm3, SUBS, SUBS_imm8, SBCS,
+        RSBS,
+        MULS,
         NOT_DEF
         );  -- Executor commands
 
