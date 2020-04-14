@@ -102,7 +102,6 @@ architecture Behavioral of cortex_m0_core is
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
         execution_cmd: out executor_cmds_t
-        --execution_cmd: out STD_LOGIC_VECTOR (4 downto 0)
     );
     end component;
     
@@ -117,8 +116,13 @@ architecture Behavioral of cortex_m0_core is
              imm8_z_ext : in  std_logic_vector(31 downto 0);
              destination_is_PC : in std_logic;
              state: in core_state_t;
+             current_flags : in flag_t;
+             cmd_out: out executor_cmds_t;
+             set_flags : out boolean;
              PC_updated: out std_logic;
              result : out std_logic_vector(31 downto 0);
+             alu_temp_32 : out std_logic;
+             overflow_status : out std_logic_vector(2 downto 0);
              WE: out std_logic
          );
     end component;
@@ -134,6 +138,20 @@ architecture Behavioral of cortex_m0_core is
         );
     end component;
     
+     component status_flags is
+        Port (
+            clk : in std_logic;
+            reset : in std_logic;
+            WE : in std_logic;                          -- Write Enable
+            result : in std_logic_vector(31 downto 0);
+            alu_temp_32 : in std_logic;
+            overflow_status : in std_logic_vector(2 downto 0);
+            cmd: in executor_cmds_t;
+            set_flags : in boolean; 
+            flags_o : out flag_t
+            );
+    end component;
+    
     -- Declare clock interface
     ATTRIBUTE X_INTERFACE_INFO : STRING;
     ATTRIBUTE X_INTERFACE_INFO of HCLK: SIGNAL is "xilinx.com:signal:clock:1.0 HCLK CLK";
@@ -145,7 +163,6 @@ architecture Behavioral of cortex_m0_core is
     ATTRIBUTE X_INTERFACE_PARAMETER of HRESETn: SIGNAL is "POLARITY ACTIVE_HIGH";
 			
 	-- signals
-	signal Select_Inst_A_B : std_logic;                        -- = 0 inst A, = 1, inst B 
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
     signal PC:  STD_LOGIC_VECTOR (31 downto 0);
@@ -173,23 +190,43 @@ architecture Behavioral of cortex_m0_core is
 	signal gp_addrA_executor : std_logic_vector(31 downto 0);	
     
     -- decoder signals
-    signal imm8:  STD_LOGIC_VECTOR (7 downto 0);
+    signal imm8:  std_logic_vector (7 downto 0);
 	signal WE :  std_logic;	
 	
 	-- executor signals
     signal command:  executor_cmds_t := NOT_DEF;
     signal command_value:  executor_cmds_t := NOT_DEF;
-    signal result:  STD_LOGIC_VECTOR (31 downto 0);
+    signal result:  std_logic_vector (31 downto 0);
 	signal destination_is_PC :  std_logic := '0';	
 	signal destination_is_PC_value :  std_logic := '0';	
 	signal PC_updated : std_logic;	
+	signal cmd_out : executor_cmds_t;	
+	signal set_flags : boolean;
+	signal alu_temp_32 : std_logic;
+	signal overflow_status : std_logic_vector (2 downto 0);
+	
 	
 	
 	-- core state signals
 	signal m0_core_state: core_state_t; 
-    
+	
+    -- status flags signals
+	signal  flag_reg_WE :  std_logic;	
+	signal  set_N       :  std_logic;	
+    signal  set_Z       :  std_logic;
+    signal  set_C       :  std_logic;
+    signal  set_V       :  std_logic;
+    signal  set_EN      :  std_logic_vector (5 downto 0);
+    signal  set_T       :  std_logic;
+    signal  N_flag      :  std_logic;
+    signal  Z_flag      :  std_logic;
+    signal  C_flag      :  std_logic;
+    signal  V_flag      :  std_logic;
+    signal  EN_flag     :  std_logic_vector (5 downto 0);
+    signal  T_flag      :  std_logic;
+    signal  flags       :  flag_t;
   
-
+    
     -- aliases
     -- Little endian:
     -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
@@ -204,9 +241,8 @@ architecture Behavioral of cortex_m0_core is
 	-- Simulation signals  
 	--synthesis translate off
     signal cortex_m0_opcode : string(1 to 14) := "              ";
-    signal cortex_m0_status : string(1 to 18) := " N, Z, C, V, -----";
+    signal cortex_m0_status : string(1 to 18) := "NN,NZ,NC,NV, -----";
 	--synthesis translate on
-					
 						
 begin
 
@@ -244,8 +280,13 @@ begin
              imm8_z_ext => imm8_z_ext,
              destination_is_PC => destination_is_PC,
              state => m0_core_state,
+             current_flags => flags,
+             cmd_out => cmd_out,
+             set_flags => set_flags,
              PC_updated => PC_updated,
              result => result,
+             alu_temp_32 => alu_temp_32,
+             overflow_status => overflow_status,
              WE => WE
          );
          
@@ -257,8 +298,20 @@ begin
             PC_2bit_LSB => PC(1 downto 0),
             state => m0_core_state
         ); 
+        
+     m0_core_flags: status_flags port map (
+            clk => HCLK,
+            reset => internal_reset,
+            WE => flag_reg_WE,
+            result => result,
+            alu_temp_32 => alu_temp_32,
+            cmd => cmd_out,
+            set_flags => set_flags,
+            overflow_status => overflow_status,
+            flags_o  => flags
+        );
     
-    internal_reset_p: process (HCLK) begin
+     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
             internal_reset <= not HRESETn;
             load_current_inst_permitted <= run; 
@@ -398,90 +451,131 @@ begin
     -- Simulation related code
     --synthesis translate off
     
-    simulation_p: process (HCLK, internal_reset, HRDATA, Select_inst_A_B, current_instruction) 
+    simulation_p: process (HCLK, internal_reset, current_instruction, flags) 
         -- Variables for contents of each register in each bank
         -- variable sim_r0 : std_logic_vector(31 downto 0) := X"0000";
         variable     Rd_decode : string(1 to 2);   -- Rd register specification
         variable     Rm_decode : string(1 to 2);   -- Rd register specification
         variable     Rn_decode : string(1 to 2);   -- Rn register specification
         variable     imm8_decode : string(1 to 3);   -- immediate 8 specification
+        variable     N_flag : string(1 to 2);       
+        variable     Z_flag : string(1 to 2);       
+        variable     C_flag : string(1 to 2);       
+        variable     V_flag : string(1 to 2);       
+        variable     reset_flag : string(1 to 7);       
     begin  
-            Rd_decode(1) := 'r';
-            Rm_decode(1) := 'r';
-            Rn_decode(1) := 'r';
-            imm8_decode(1) :=  '#';
-      
-            -- [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
-            if std_match(current_instruction(15 downto 10), "00100-") then                      -- MOVS Rd, #(imm8)
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));               
-                imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
-                imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
-                cortex_m0_opcode <= "MOVS " & Rd_decode & "," & imm8_decode & "   ";    
-            elsif std_match(current_instruction(15 downto 6), "0000000000") then                -- MOVS <Rd>,<Rm>   
-                Rd_decode(2) := hexcharacter (current_instruction (3 downto 0));
-                Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "MOVS " & Rd_decode & "," & Rm_decode & "    ";    
-            elsif std_match(current_instruction(15 downto 8), "01000110") then                  -- MOV <Rd>,<Rm>  ,  MOV PC, Rm 
-                Rd_decode(2) := hexcharacter (current_instruction (7) & current_instruction (2 downto 0));
-                Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
-                cortex_m0_opcode <= "MOV  " & Rd_decode & "," & Rm_decode & "    ";    
-            elsif std_match(current_instruction(15 downto 9), "0001110") then                  -- ADDS <Rd>,<Rn>,#<imm3>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;    
-            elsif std_match(current_instruction(15 downto 9), "0001100") then                  -- ADDS <Rd>,<Rn>,<Rm>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));
-                cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";    
-            elsif std_match(current_instruction(15 downto 8), "01000100") then                  -- ADD <Rdn>,<Rm> - ADD PC,<Rm>
-                Rd_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));
-                Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
-                cortex_m0_opcode <= "ADD  " & Rd_decode & "," & Rm_decode & "    ";    
-            elsif std_match(current_instruction(15 downto 11), "00110") then                    -- ADDS <Rdn>,#<imm8>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
-                imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
-                imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
-                cortex_m0_opcode <= "ADDS " & Rd_decode & "," & imm8_decode & "   ";    
-            elsif std_match(current_instruction(15 downto 6), "0100000101") then                -- ADCS <Rdn>,<Rm>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "    ";   
-            elsif std_match(current_instruction(15 downto 9), "0001111") then                  -- SUBS <Rd>,<Rn>,#<imm3>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;  
-            elsif std_match(current_instruction(15 downto 9), "0001101") then                  -- SUBS <Rd>,<Rn>,<Rm>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));    
-                cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";   
-            elsif std_match(current_instruction(15 downto 11), "00111") then                    -- SUBS <Rdn>,#<imm8>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
-                imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
-                imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
-                cortex_m0_opcode <= "SUBS " & Rd_decode & "," & imm8_decode & "   ";    
-            elsif std_match(current_instruction(15 downto 6), "0100000110") then                -- SBCS <Rdn>,<Rm>  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "SBCS " & Rd_decode & "," & Rm_decode & "    ";   
-            elsif std_match(current_instruction(15 downto 6), "0100001001") then                -- RSBS <Rd>,<Rn>,#0  
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "RSBS " & Rd_decode & "," & Rn_decode & "    ";   
-            elsif std_match(current_instruction(15 downto 6), "0100001101") then                -- MULS <Rdm>,<Rn>,<Rdm>
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
-                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                cortex_m0_opcode <= "MULS " & Rd_decode & "," & Rn_decode & "," & Rd_decode & " ";   
-            end if;
-            
-          if rising_edge(HCLK) then 
+        Rd_decode(1) := 'r';
+        Rm_decode(1) := 'r';
+        Rn_decode(1) := 'r';
+        imm8_decode(1) :=  '#';
+        N_flag(2) := 'N';
+        Z_flag(2) := 'Z';
+        C_flag(2) := 'C';
+        V_flag(2) := 'V';
+
+        
+        -- [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
+        if rising_edge(HCLK) then 
             if internal_reset = '1' then
-                cortex_m0_status(13 to 18) <= ",Reset";
+                cortex_m0_opcode <= "CORE IS RESET!";
+                reset_flag := " ,Reset";
+                N_flag(1) := 'N';
+                Z_flag(1) := 'N';
+                C_flag(1) := 'N';
+                V_flag(1) := 'N';
+                cortex_m0_status <= N_flag & "," & Z_flag & "," & C_flag & "," & V_flag & reset_flag;
             else
-                cortex_m0_status(13 to 18) <= "      ";
+                -------------------------------------------------------------------------------------- -- MOVS Rd, #(imm8)
+                if std_match(current_instruction(15 downto 10), "00100-") then                      
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));               
+                    imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
+                    imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
+                    cortex_m0_opcode <= "MOVS " & Rd_decode & "," & imm8_decode & "   ";    
+                -------------------------------------------------------------------------------------- -- MOVS <Rd>,<Rm>     
+                elsif std_match(current_instruction(15 downto 6), "0000000000") then                 
+                    Rd_decode(2) := hexcharacter (current_instruction (3 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "MOVS " & Rd_decode & "," & Rm_decode & "    "; 
+                -------------------------------------------------------------------------------------- -- MOV <Rd>,<Rm>  ,  MOV PC, Rm     
+                elsif std_match(current_instruction(15 downto 8), "01000110") then                   
+                    Rd_decode(2) := hexcharacter (current_instruction (7) & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
+                    cortex_m0_opcode <= "MOV  " & Rd_decode & "," & Rm_decode & "    ";    
+                -------------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
+                elsif std_match(current_instruction(15 downto 9), "0001110") then                    
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;    
+                -------------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,<Rm> 
+                elsif std_match(current_instruction(15 downto 9), "0001100") then                   
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));
+                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";    
+                -------------------------------------------------------------------------------------- -- ADD <Rdn>,<Rm> - ADD PC,<Rm>
+                elsif std_match(current_instruction(15 downto 8), "01000100") then                  
+                    Rd_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
+                    cortex_m0_opcode <= "ADD  " & Rd_decode & "," & Rm_decode & "    ";    
+                -------------------------------------------------------------------------------------- -- ADDS <Rdn>,#<imm8>
+                elsif std_match(current_instruction(15 downto 11), "00110") then                      
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
+                    imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
+                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & imm8_decode & "   ";    
+                -------------------------------------------------------------------------------------- -- ADCS <Rdn>,<Rm>  
+                elsif std_match(current_instruction(15 downto 6), "0100000101") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "    ";   
+                -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>  
+                elsif std_match(current_instruction(15 downto 9), "0001111") then                  
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;  
+                -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>  
+                elsif std_match(current_instruction(15 downto 9), "0001101") then                  
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));    
+                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";   
+                -------------------------------------------------------------------------------------- -- SUBS <Rdn>,#<imm8> 
+                elsif std_match(current_instruction(15 downto 11), "00111") then                     
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
+                    imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
+                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & imm8_decode & "   ";    
+                -------------------------------------------------------------------------------------- -- SBCS <Rdn>,<Rm> 
+                elsif std_match(current_instruction(15 downto 6), "0100000110") then                 
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "SBCS " & Rd_decode & "," & Rm_decode & "    ";   
+                -------------------------------------------------------------------------------------- -- RSBS <Rd>,<Rn>,#0 
+                elsif std_match(current_instruction(15 downto 6), "0100001001") then                 
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "RSBS " & Rd_decode & "," & Rn_decode & "    ";   
+                -------------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>
+                elsif std_match(current_instruction(15 downto 6), "0100001101") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "MULS " & Rd_decode & "," & Rn_decode & "," & Rd_decode & " ";  
+               -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100001010") then                
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "    ";   
+               end if;
+                
+               if (flags.N = '1') then N_flag(1) := ' '; else N_flag(1) := 'N'; end if;
+               if (flags.Z = '1') then Z_flag(1) := ' '; else N_flag(1) := 'N'; end if;
+               if (flags.C = '1') then C_flag(1) := ' '; else N_flag(1) := 'N'; end if;
+               if (flags.V = '1') then V_flag(1) := ' '; else N_flag(1) := 'N'; end if;
+               reset_flag := " ,Run  ";
+                
+               cortex_m0_status <= N_flag & "," & Z_flag & "," & C_flag & "," & V_flag & reset_flag;
             end if;
         end if;
     end process;

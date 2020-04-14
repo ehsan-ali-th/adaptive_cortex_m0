@@ -82,23 +82,26 @@ begin
     
     decode_shift_op_p: process (run, instruction) begin
         if (run = '1') then 
-            if std_match(opcode, "00100-") then                                                 -- MOVS Rd, #<imm8>
+            ----------------------------------------------------------------------------------- -- MOVS Rd, #<imm8>
+            if std_match(opcode, "00100-") then                                                 
                gp_WR_addr <= '0' & instruction (10 downto 8); -- Rd 
                gp_addrA <= B"0000";
                gp_addrB <= B"0000";
                imm8 <= instruction (7 downto 0);
                execution_cmd <= MOVS_imm8;
                destination_is_PC <= '0';
-            elsif (std_match(opcode, "000000") and instruction(9 downto 6) = "0000") then       -- MOVS <Rd>,<Rm>   
+            ----------------------------------------------------------------------------------- -- MOVS <Rd>,<Rm> 
+            elsif (std_match(opcode, "000000") and instruction(9 downto 6) = "0000") then         
                 gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd 
                 gp_addrA <= '0' & instruction (5 downto 3); -- Rm
                 gp_addrB <= B"0000";
                 imm8 <= (others => '0');
                 execution_cmd <= MOVS;
                 destination_is_PC <= '0';
-            elsif (std_match(opcode, "010001") and instruction(9 downto 8) = "10") then         -- MOV <Rd>,<Rm>   ,  MOV PC, Rm
-                gp_WR_addr <= instruction(7) & instruction (2 downto 0); -- Rd
-                gp_addrA <= instruction (6 downto 3); -- Rm
+            ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
+            elsif (std_match(opcode, "010001") and instruction(9 downto 8) = "10") then         
+                gp_WR_addr <= instruction(7) & instruction (2 downto 0);    -- Rd
+                gp_addrA <= instruction (6 downto 3);                       -- Rn
                 gp_addrB <= B"0000";
                 imm8 <= (others => '0');
                 execution_cmd <= MOV;
@@ -107,23 +110,26 @@ begin
                 else
                     destination_is_PC <= '0';
                 end if;
-            elsif (std_match(opcode, "000111") and instruction(9) = '0') then                   -- ADDS <Rd>,<Rn>,#<imm3>
-                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd
-                gp_addrA <= '0' & instruction (5 downto 3); -- Rn 
+            ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>   
+            elsif (std_match(opcode, "000111") and instruction(9) = '0') then                   
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3);             -- Rn 
                 gp_addrB <= B"0000";
-                imm8 <= B"00000" & instruction (8 downto 6); -- imm3
+                imm8 <= B"00000" & instruction (8 downto 6);            -- imm3
                 execution_cmd <= ADDS_imm3;
                 destination_is_PC <= '0';
-            elsif (std_match(opcode, "000110") and instruction(9) = '0') then                   -- ADDS <Rd>,<Rn>,<Rm>
-                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd
-                gp_addrA <= '0' & instruction (8 downto 6); -- Rm
-                gp_addrB <= '0' & instruction (5 downto 3); -- Rn
+            ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,<Rm>   
+            elsif (std_match(opcode, "000110") and instruction(9) = '0') then                   
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (8 downto 6);             -- Rm
+                gp_addrB <= '0' & instruction (5 downto 3);             -- Rn
                 execution_cmd <= ADDS;
                 destination_is_PC <= '0';
-            elsif (std_match(opcode, "010001") and instruction(9 downto 8) = B"00") then        -- ADD <Rdn>,<Rm> - ADD PC,<Rm>
+            ----------------------------------------------------------------------------------- -- ADD <Rdn>,<Rm> - ADD PC,<Rm>   
+            elsif (std_match(opcode, "010001") and instruction(9 downto 8) = B"00") then        
                 gp_WR_addr <= instruction(7) & instruction (2 downto 0);    -- Rdn
                 gp_addrA <= instruction(7) & instruction (2 downto 0);      -- Rdn
-                gp_addrB <= instruction (6 downto 3); -- Rm 
+                gp_addrB <= instruction (6 downto 3);                       -- Rm 
                 if ((instruction(7) & instruction (2 downto 0)) = B"1111" ) then    -- check if destination is PC ?
                     execution_cmd <= ADD_PC;
                     destination_is_PC <= '1';
@@ -131,54 +137,69 @@ begin
                     execution_cmd <= ADD;
                     destination_is_PC <= '0';
                 end if;
-            elsif (std_match(opcode, "00110-")) then                                            -- ADDS <Rdn>,#<imm8>
+            ----------------------------------------------------------------------------------- -- ADDS <Rdn>,#<imm8>   
+            elsif (std_match(opcode, "00110-")) then                                            
                 gp_WR_addr <= '0' & instruction (10 downto 8);          -- Rdn
                 gp_addrA <= '0' & instruction (10 downto 8);            -- Rdn
                 imm8 <= instruction (7 downto 0);                       -- imm8
                 execution_cmd <= ADDS_imm8;
                 destination_is_PC <= '0';
-            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0101") then      -- ADCS <Rdn>,<Rm>
+            ----------------------------------------------------------------------------------- -- ADCS <Rdn>,<Rm>   
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0101") then      
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
                 gp_addrA <= '0' & instruction (2 downto 0);             -- Rdn
                 gp_addrB <= '0' & instruction (5 downto 3);             -- Rm 
                 execution_cmd <= ADCS;
                 destination_is_PC <= '0';
-            elsif (std_match(opcode, "000110") and instruction(9) = '1') then                   -- SUBS <Rd>,<Rn>,<Rm>
-                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd
-                gp_addrA <= '0' & instruction (8 downto 6); -- Rm
-                gp_addrB <= '0' & instruction (5 downto 3); -- Rn
+            ----------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>   
+            elsif (std_match(opcode, "000110") and instruction(9) = '1') then                   
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (8 downto 6);             -- Rm
+                gp_addrB <= '0' & instruction (5 downto 3);             -- Rn
                 execution_cmd <= SUBS;
                 destination_is_PC <= '0';    
-            elsif (std_match(opcode, "000111") and instruction(9) = '1') then                   -- SUBS <Rd>,<Rn>,#<imm3>
-                gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd
-                gp_addrA <= '0' & instruction (5 downto 3); -- Rn 
+            ----------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>   
+            elsif (std_match(opcode, "000111") and instruction(9) = '1') then                   
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3);             -- Rn 
                 gp_addrB <= B"0000";
-                imm8 <= B"00000" & instruction (8 downto 6); -- imm3
+                imm8 <= B"00000" & instruction (8 downto 6);            -- imm3
                 execution_cmd <= SUBS_imm3;
                 destination_is_PC <= '0';  
-            elsif (std_match(opcode, "00111-")) then                                              -- SUBS <Rdn>,#<imm8>
+            ----------------------------------------------------------------------------------- -- SUBS <Rdn>,#<imm8> 
+            elsif (std_match(opcode, "00111-")) then                                              
                 gp_WR_addr <= '0' & instruction (10 downto 8);          -- Rdn
                 gp_addrA <= '0' & instruction (10 downto 8);            -- Rdn
                 imm8 <= instruction (7 downto 0);                       -- imm8
                 execution_cmd <= SUBS_imm8;
                 destination_is_PC <= '0';  
-            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0110") then        -- SBCS <Rdn>,<Rm>
+            ----------------------------------------------------------------------------------- -- SBCS <Rdn>,<Rm>   
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0110") then        
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
                 gp_addrA <= '0' & instruction (2 downto 0);             -- Rdn
                 gp_addrB <= '0' & instruction (5 downto 3);             -- Rm 
                 execution_cmd <= SBCS;
                 destination_is_PC <= '0';
-            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1001") then        -- RSBS <Rd>,<Rn>,#0
+            ----------------------------------------------------------------------------------- -- RSBS <Rd>,<Rn>,#0   
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1001") then        
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
                 gp_addrA <= '0' & instruction (5 downto 3);             -- Rn
                 execution_cmd <= RSBS;
-                destination_is_PC <= '0';    
-            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1101") then        -- MULS <Rdm>,<Rn>,<Rdm>
+                destination_is_PC <= '0';   
+            ----------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>    
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1101") then        
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdm
                 gp_addrA <= '0' & instruction (2 downto 0);             -- Rdm
                 gp_addrB <= '0' & instruction (5 downto 3);             -- Rn
                 execution_cmd <= MULS;
+                destination_is_PC <= '0';  
+            ----------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>     
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1010") then        
+                gp_addrA <= '0' & instruction (2 downto 0);             -- Rn
+                gp_addrB <= '0' & instruction (5 downto 3);             -- Rm
+                execution_cmd <= CMP;
                 destination_is_PC <= '0';    
+            -----------------------------------------------------------------------------------    
             else   
                gp_WR_addr <= (others => '0');
                gp_addrA <= (others => '0');
@@ -196,9 +217,5 @@ begin
             destination_is_PC <= '0';
         end if;    
 end process;
-    
-    
-    
-    
 
 end Behavioral;

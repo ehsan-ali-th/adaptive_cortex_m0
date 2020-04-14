@@ -34,6 +34,7 @@ use IEEE.STD_LOGIC_1164.ALL;
 package helper_funcs is
     function conv_to_string ( a: std_logic_vector) return string;
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
+    function to_std_logic (in_bit: bit) return std_logic;
 
     type core_state_t is (
         s_RESET, 
@@ -46,14 +47,24 @@ package helper_funcs is
         s_PC_UNALIGNED   
         );
 
-    type executor_cmds_t is (
+    type executor_cmds_t is (                               -- Executor commands
         MOVS_imm8, MOVS, MOV, 
         ADDS_imm3, ADDS, ADD, ADD_PC,  ADDS_imm8, ADCS,
         SUBS_imm3, SUBS, SUBS_imm8, SBCS,
         RSBS,
         MULS,
+        CMP,
         NOT_DEF
-        );  -- Executor commands
+        );  
+        
+    type flag_t is record 
+        N  : bit;                              -- Negative    
+        Z  : bit;                              -- Zero 
+        C  : bit;                              -- Carry
+        V  : bit;                              -- Overflow
+        EN : bit_vector (5 downto 0);          -- Exception Number.
+        T  : bit;                              -- Thumb code is executed.
+    end record;        
 
 end  helper_funcs;
 
@@ -99,5 +110,17 @@ package body helper_funcs is
     end case;
     return hex;
   end function;
+
+  function to_std_logic (in_bit: bit) return std_logic is
+    variable  ret : std_logic;
+  begin
+    if (in_bit = '0') then
+        ret := '0';
+    else
+        ret := '1';
+    end if;   
+     return ret; 
+  end function;
+
 
 end  helper_funcs;
