@@ -233,6 +233,12 @@ begin
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+            ------------------------------------------------------------ -- CMP <Rn>,#<imm8>     
+            when CMP_imm8 =>                                               
+                WE_val <= '0';              -- Do not write back the result
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
             ------------------------------------------------------------ -- All unefined instructions        
             when others  => 
                 WE_val <= '0'; 
@@ -306,6 +312,11 @@ begin
                  -- Add operand A with B but discard the result
                  -- AddWithCarry(R[n], shifted, '0');
                  alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);                                       
+            -------------------------------------------------------------------------------------- -- CMP <Rn>,#<imm8>
+            when CMP_imm8 =>             
+                 -- Add operand A with B but discard the result
+                 -- AddWithCarry(R[n], shifted, '0');
+                 alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & imm8_z_ext)) + 1;                                       
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when others  =>
                 alu_temp <= (others => '0');

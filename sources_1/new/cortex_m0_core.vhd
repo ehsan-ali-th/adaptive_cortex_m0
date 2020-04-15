@@ -422,6 +422,7 @@ begin
             when ADDS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when SUBS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when SUBS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when CMP_imm8  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
@@ -556,10 +557,16 @@ begin
                     Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
                     cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "    ";   
                -------------------------------------------------------------------------------------- -- CMN <Rn>,<Rm> 
-               elsif std_match(current_instruction(15 downto 6), "0100011011") then                
+               elsif std_match(current_instruction(15 downto 6), "0100001011") then                
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                     cortex_m0_opcode <= "CMN  " & Rn_decode & "," & Rm_decode & "    ";   
+               -------------------------------------------------------------------------------------- -- CMP <Rn>,#<imm8> 
+               elsif std_match(current_instruction(15 downto 11), "00101") then                
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
+                    imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
+                    imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
+                    cortex_m0_opcode <= "CMP  " & Rd_decode & "," & imm8_decode & "   "; 
                end if;
             end if;
         end if;

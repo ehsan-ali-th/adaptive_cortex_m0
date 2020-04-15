@@ -211,6 +211,12 @@ begin
                 gp_addrB <= '0' & instruction (5 downto 3);             -- Rm
                 execution_cmd <= CMN;
                 destination_is_PC <= '0';       
+            ----------------------------------------------------------------------------------- -- CMP <Rn>,#<imm8>     
+            elsif (std_match(opcode, "00101-")) then        
+                gp_addrA <= '0' & instruction (10 downto 8);             -- Rn
+                imm8 <= instruction (7 downto 0);                        -- imm8
+                execution_cmd <= CMP_imm8;
+                destination_is_PC <= '0';       
             -----------------------------------------------------------------------------------    
             else   
                gp_WR_addr <= (others => '0');

@@ -99,7 +99,7 @@ begin
                     ------------------------------------------------------------ -- CMN <Rn>,<Rm>     
                     when ADDS_imm3 | ADDS | ADDS_imm8 | ADCS | 
                           SUBS | SUBS_imm8 | SBCS | RSBS |
-                          CMP | CMN =>    
+                          CMP | CMN | CMP_imm8 =>    
                         -- APSR.N = result<31>;
                         -- APSR.Z = IsZeroBit(result);
                         -- APSR.C = carry;
