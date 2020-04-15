@@ -54,6 +54,7 @@ package helper_funcs is
         RSBS,
         MULS,
         CMP, CMN, CMP_imm8,
+        ANDS, EORS, ORRS, BICS, MVNS, TST,
         NOT_DEF
         );  
         

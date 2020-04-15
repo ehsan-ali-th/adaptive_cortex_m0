@@ -239,6 +239,42 @@ begin
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+            ------------------------------------------------------------ -- ANDS <Rdn>,<Rm>     
+            when ANDS =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+            ------------------------------------------------------------ -- EORS <Rdn>,<Rm>     
+            when EORS =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+            ------------------------------------------------------------ -- ORRS <Rdn>,<Rm>     
+            when ORRS =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+            ------------------------------------------------------------ -- BICS <Rdn>,<Rm>     
+            when BICS =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+            ------------------------------------------------------------ -- MVNS <Rd>,<Rm>     
+            when MVNS =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+            ------------------------------------------------------------ -- TST <Rn>,<Rm>     
+            when TST =>                                               
+                WE_val <= '0';              -- Do not write back the result
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
             ------------------------------------------------------------ -- All unefined instructions        
             when others  => 
                 WE_val <= '0'; 
@@ -314,9 +350,52 @@ begin
                  alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);                                       
             -------------------------------------------------------------------------------------- -- CMP <Rn>,#<imm8>
             when CMP_imm8 =>             
-                 -- Add operand A with B but discard the result
+                 -- Add operand A with imm8 but discard the result
                  -- AddWithCarry(R[n], shifted, '0');
                  alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & imm8_z_ext)) + 1;                                       
+            -------------------------------------------------------------------------------------- -- ANDS <Rdn>,<Rm>
+            when ANDS =>             
+                -- (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+                -- result = R[n] AND shifted;
+                -- carry out = carry in
+                alu_temp(31 downto 0) <= unsigned (operand_A) and unsigned(operand_B); 
+                alu_temp(32) <= to_std_logic(current_flags.C);                                    
+            -------------------------------------------------------------------------------------- -- EORS <Rdn>,<Rm>
+            when EORS =>             
+                --(shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+                -- result = R[n] EOR shifted;
+                -- carry out = carry in
+                alu_temp(31 downto 0) <= unsigned (operand_A) xor unsigned(operand_B); 
+                alu_temp(32) <= to_std_logic(current_flags.C);                                    
+            -------------------------------------------------------------------------------------- -- ORRS <Rdn>,<Rm>
+            when ORRS =>             
+                -- (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+                -- result = R[n] OR shifted;
+                -- carry out = carry in
+                alu_temp(31 downto 0) <= unsigned (operand_A) or unsigned(operand_B); 
+                alu_temp(32) <= to_std_logic(current_flags.C);                                    
+            -------------------------------------------------------------------------------------- -- BICS <Rdn>,<Rm>
+            when BICS =>             
+                -- (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+                -- result = R[n] AND NOT(shifted);
+                -- carry out = carry in
+                alu_temp(31 downto 0) <= unsigned (operand_A) and unsigned(not (operand_B)); 
+                alu_temp(32) <= to_std_logic(current_flags.C);                                    
+            -------------------------------------------------------------------------------------- -- MVNS <Rd>,<Rm>
+            when MVNS =>             
+                -- (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+                -- result = NOT(shifted);
+                -- R[d] = result;
+                -- carry out = carry in
+                alu_temp(31 downto 0) <= unsigned (not (operand_A)); 
+                alu_temp(32) <= to_std_logic(current_flags.C);                                    
+            -------------------------------------------------------------------------------------- -- TST <Rn>,<Rm>
+            when TST =>             
+                -- (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+                -- result = R[n] AND shifted;
+                -- carry out = carry in
+                alu_temp(31 downto 0) <= unsigned (operand_A) and unsigned(operand_B); 
+                alu_temp(32) <= to_std_logic(current_flags.C);                                    
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when others  =>
                 alu_temp <= (others => '0');

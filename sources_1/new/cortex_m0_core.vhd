@@ -567,6 +567,40 @@ begin
                     imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                     imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
                     cortex_m0_opcode <= "CMP  " & Rd_decode & "," & imm8_decode & "   "; 
+               -------------------------------------------------------------------------------------- --ANDS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100000000") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "ANDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
+               -------------------------------------------------------------------------------------- --EORS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100000001") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "EORS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
+               -------------------------------------------------------------------------------------- --ORRS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100001100") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "ORRS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
+               -------------------------------------------------------------------------------------- --BICS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100001110") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "BICS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
+               -------------------------------------------------------------------------------------- --MVNS <Rd>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100001111") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "MVNS " & Rd_decode & "," & Rm_decode &  "    "; 
+               -------------------------------------------------------------------------------------- --TST <Rn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100001000") then                
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "TST  " & Rn_decode & "," & Rm_decode &  "    "; 
                end if;
             end if;
         end if;
