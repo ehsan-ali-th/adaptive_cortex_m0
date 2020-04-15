@@ -104,6 +104,8 @@ begin
     
     cmd_out <= command;
     
+    alu_temp_32 <= alu_temp(32);
+    
     -- This process  flushes the pipeline if PC gets updated.
     WE_p: process  (WE_val, state) begin
         if (state = s_PC_UPDATED_INVALID or 
@@ -219,8 +221,14 @@ begin
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
-            ------------------------------------------------------------ -- CMP <Rn>,<Rm>       
+            ------------------------------------------------------------ -- CMP <Rn>,<Rm>     T1, T2  
             when CMP =>                                               
+                WE_val <= '0';              -- Do not write back the result
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+            ------------------------------------------------------------ -- CMN <Rn>,<Rm>    
+            when CMN =>                                               
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
@@ -293,6 +301,11 @@ begin
                  -- subtract operand A from B but discard the result
                  -- AddWithCarry(R[n], NOT(shifted), '1');
                  alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & operand_B)) + 1;                                       
+            -------------------------------------------------------------------------------------- -- CMN <Rn>,<Rm>
+            when CMN =>             
+                 -- Add operand A with B but discard the result
+                 -- AddWithCarry(R[n], shifted, '0');
+                 alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);                                       
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when others  =>
                 alu_temp <= (others => '0');

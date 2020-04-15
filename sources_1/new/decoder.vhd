@@ -72,13 +72,13 @@ begin
         end case;
     end process;
     
-    decode_op_p: process (opcode) begin
-        if std_match(opcode, "00----") then -- Shift (immediate), add, subtract, move, and compare
-           is_shift_class_instruction <= '1'; report "Instruction 00xxxx detected. (Shift Class) opcode = " & conv_to_string(opcode) severity note;
-        else   
-            is_shift_class_instruction <= '0'; report "Instruction is not implemented: opcode = " & conv_to_string(opcode) severity warning;
-        end if;   
-    end process;
+--    decode_op_p: process (opcode) begin
+--        if std_match(opcode, "00----") then -- Shift (immediate), add, subtract, move, and compare
+--           is_shift_class_instruction <= '1'; report "Instruction 00xxxx detected. (Shift Class) opcode = " & conv_to_string(opcode) severity note;
+--        else   
+--            is_shift_class_instruction <= '0'; report "Instruction is not implemented: opcode = " & conv_to_string(opcode) severity warning;
+--        end if;   
+--    end process;
     
     decode_shift_op_p: process (run, instruction) begin
         if (run = '1') then 
@@ -193,12 +193,24 @@ begin
                 gp_addrB <= '0' & instruction (5 downto 3);             -- Rn
                 execution_cmd <= MULS;
                 destination_is_PC <= '0';  
-            ----------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>     
+            ----------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>   T1  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1010") then        
                 gp_addrA <= '0' & instruction (2 downto 0);             -- Rn
                 gp_addrB <= '0' & instruction (5 downto 3);             -- Rm
                 execution_cmd <= CMP;
                 destination_is_PC <= '0';    
+            ----------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>   T2  
+            elsif (std_match(opcode, "010001") and instruction(9 downto 8) = B"01") then        
+                gp_addrA <= instruction(7) & instruction (2 downto 0);  -- Rn
+                gp_addrB <= instruction (6 downto 3);                   -- Rm
+                execution_cmd <= CMP;
+                destination_is_PC <= '0';       
+            ----------------------------------------------------------------------------------- -- CMN <Rn>,<Rm>     
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1011") then        
+                gp_addrA <= '0' & instruction (2 downto 0);             -- Rn
+                gp_addrB <= '0' & instruction (5 downto 3);             -- Rm
+                execution_cmd <= CMN;
+                destination_is_PC <= '0';       
             -----------------------------------------------------------------------------------    
             else   
                gp_WR_addr <= (others => '0');

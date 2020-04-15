@@ -142,7 +142,6 @@ architecture Behavioral of cortex_m0_core is
         Port (
             clk : in std_logic;
             reset : in std_logic;
-            WE : in std_logic;                          -- Write Enable
             result : in std_logic_vector(31 downto 0);
             alu_temp_32 : in std_logic;
             overflow_status : in std_logic_vector(2 downto 0);
@@ -209,34 +208,19 @@ architecture Behavioral of cortex_m0_core is
 	
 	-- core state signals
 	signal m0_core_state: core_state_t; 
-	
-    -- status flags signals
-	signal  flag_reg_WE :  std_logic;	
-	signal  set_N       :  std_logic;	
-    signal  set_Z       :  std_logic;
-    signal  set_C       :  std_logic;
-    signal  set_V       :  std_logic;
-    signal  set_EN      :  std_logic_vector (5 downto 0);
-    signal  set_T       :  std_logic;
-    signal  N_flag      :  std_logic;
-    signal  Z_flag      :  std_logic;
-    signal  C_flag      :  std_logic;
-    signal  V_flag      :  std_logic;
-    signal  EN_flag     :  std_logic_vector (5 downto 0);
-    signal  T_flag      :  std_logic;
-    signal  flags       :  flag_t;
+    signal flags       :  flag_t;
   
     
     -- aliases
     -- Little endian:
     -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
     -- [31 30 29 28 - 27 26 25 24] [23 22 21 20 - 19 18 17 16] [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
-    alias inst_A_1st_half : STD_LOGIC_VECTOR(7 downto 0) is HRDATA (31 downto 24);
-    alias inst_A_2nd_half : STD_LOGIC_VECTOR(7 downto 0) is HRDATA (23 downto 16);
-    alias inst_B_1st_half : STD_LOGIC_VECTOR(7 downto 0) is HRDATA (15 downto 8);
-    alias inst_B_2nd_half : STD_LOGIC_VECTOR(7 downto 0) is HRDATA (7 downto 0);
+    alias inst_A_1st_half : std_logic_vector(7 downto 0) is HRDATA (31 downto 24);
+    alias inst_A_2nd_half : std_logic_vector(7 downto 0) is HRDATA (23 downto 16);
+    alias inst_B_1st_half : std_logic_vector(7 downto 0) is HRDATA (15 downto 8);
+    alias inst_B_2nd_half : std_logic_vector(7 downto 0) is HRDATA (7 downto 0);
 
-    signal current_instruction: STD_LOGIC_VECTOR (15 downto 0);
+    signal current_instruction: std_logic_vector (15 downto 0);
 	
 	-- Simulation signals  
 	--synthesis translate off
@@ -302,7 +286,6 @@ begin
      m0_core_flags: status_flags port map (
             clk => HCLK,
             reset => internal_reset,
-            WE => flag_reg_WE,
             result => result,
             alu_temp_32 => alu_temp_32,
             cmd => cmd_out,
@@ -451,39 +434,39 @@ begin
     -- Simulation related code
     --synthesis translate off
     
-    simulation_p: process (HCLK, internal_reset, current_instruction, flags) 
+    simulation_status_p: process (HCLK, internal_reset, flags) 
+    begin
+      
+        if rising_edge(HCLK) then 
+            if internal_reset = '1' then
+                cortex_m0_status <= "NN,NZ,NC,NV, Reset"; 
+            else
+                if (flags.N = '1') then cortex_m0_status(1 to 3)   <= " N,"; else cortex_m0_status(1 to 3)   <= "NN,"; end if;
+                if (flags.Z = '1') then cortex_m0_status(4 to 6)   <= " Z,"; else cortex_m0_status(4 to 6)   <= "NZ,"; end if;
+                if (flags.C = '1') then cortex_m0_status(7 to 9)   <= " C,"; else cortex_m0_status(7 to 9)   <= "NC,"; end if;
+                if (flags.V = '1') then cortex_m0_status(10 to 12) <= " V,"; else cortex_m0_status(10 to 12) <= "NV,"; end if;
+                cortex_m0_status(13 to 18) <= " ,Run ";
+            end if;      
+        end if;      
+    end process;
+
+    simulation_p: process (HCLK, internal_reset, current_instruction)
         -- Variables for contents of each register in each bank
         -- variable sim_r0 : std_logic_vector(31 downto 0) := X"0000";
         variable     Rd_decode : string(1 to 2);   -- Rd register specification
         variable     Rm_decode : string(1 to 2);   -- Rd register specification
         variable     Rn_decode : string(1 to 2);   -- Rn register specification
         variable     imm8_decode : string(1 to 3);   -- immediate 8 specification
-        variable     N_flag : string(1 to 2);       
-        variable     Z_flag : string(1 to 2);       
-        variable     C_flag : string(1 to 2);       
-        variable     V_flag : string(1 to 2);       
-        variable     reset_flag : string(1 to 7);       
     begin  
         Rd_decode(1) := 'r';
         Rm_decode(1) := 'r';
         Rn_decode(1) := 'r';
         imm8_decode(1) :=  '#';
-        N_flag(2) := 'N';
-        Z_flag(2) := 'Z';
-        C_flag(2) := 'C';
-        V_flag(2) := 'V';
-
         
         -- [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
         if rising_edge(HCLK) then 
             if internal_reset = '1' then
                 cortex_m0_opcode <= "CORE IS RESET!";
-                reset_flag := " ,Reset";
-                N_flag(1) := 'N';
-                Z_flag(1) := 'N';
-                C_flag(1) := 'N';
-                V_flag(1) := 'N';
-                cortex_m0_status <= N_flag & "," & Z_flag & "," & C_flag & "," & V_flag & reset_flag;
             else
                 -------------------------------------------------------------------------------------- -- MOVS Rd, #(imm8)
                 if std_match(current_instruction(15 downto 10), "00100-") then                      
@@ -562,23 +545,26 @@ begin
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                     cortex_m0_opcode <= "MULS " & Rd_decode & "," & Rn_decode & "," & Rd_decode & " ";  
-               -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>
+               -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm> T1
                elsif std_match(current_instruction(15 downto 6), "0100001010") then                
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                     cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "    ";   
+               -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm> T2
+               elsif std_match(current_instruction(15 downto 8), "01000101") then                
+                    Rn_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
+                    cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "    ";   
+               -------------------------------------------------------------------------------------- -- CMN <Rn>,<Rm> 
+               elsif std_match(current_instruction(15 downto 6), "0100011011") then                
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
+                    cortex_m0_opcode <= "CMN  " & Rn_decode & "," & Rm_decode & "    ";   
                end if;
-                
-               if (flags.N = '1') then N_flag(1) := ' '; else N_flag(1) := 'N'; end if;
-               if (flags.Z = '1') then Z_flag(1) := ' '; else N_flag(1) := 'N'; end if;
-               if (flags.C = '1') then C_flag(1) := ' '; else N_flag(1) := 'N'; end if;
-               if (flags.V = '1') then V_flag(1) := ' '; else N_flag(1) := 'N'; end if;
-               reset_flag := " ,Run  ";
-                
-               cortex_m0_status <= N_flag & "," & Z_flag & "," & C_flag & "," & V_flag & reset_flag;
             end if;
         end if;
     end process;
+ 
  --synthesis translate on
       
 end Behavioral;

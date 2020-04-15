@@ -53,7 +53,7 @@ package helper_funcs is
         SUBS_imm3, SUBS, SUBS_imm8, SBCS,
         RSBS,
         MULS,
-        CMP,
+        CMP, CMN,
         NOT_DEF
         );  
         

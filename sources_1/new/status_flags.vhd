@@ -38,7 +38,6 @@ entity status_flags is
     Port (
         clk : in std_logic;
         reset : in std_logic;
-        WE : in std_logic;                              -- Write Enable
         result : in std_logic_vector(31 downto 0);
         alu_temp_32 : in std_logic;
         overflow_status : in std_logic_vector(2 downto 0);      -- Concatenation of 3 bits: operand_A(31) & imm8_z_ext(31) & alu_result(31);
@@ -50,7 +49,6 @@ end status_flags;
 
 architecture Behavioral of status_flags is
     signal status_flags : bit_vector(31 downto 0) := (others=>'0');
-    signal command : executor_cmds_t;
         
     alias N : bit is status_flags(31);
     alias Z : bit is status_flags(30);
@@ -61,17 +59,7 @@ architecture Behavioral of status_flags is
 
 begin
 
-    FlagProc: process(clk) begin
-        if rising_edge(clk) then
-            if reset = '0' then 
-                command <= cmd;  
-            else  
-                command <= NOT_DEF;
-            end if;
-        end if;
-    end process FlagProc;
-    
-    cmd_p: process(reset, command, result, set_flags, overflow_status) begin
+    cmd_p: process(reset, cmd, result, set_flags, overflow_status, alu_temp_32) begin
         if reset = '0' then 
             if set_flags then
                 -- how to calculate overflow:
@@ -80,7 +68,7 @@ begin
                 -- 2) The inputs both have sign bits that are on, while the result has a sign bit that is off.
                 -- concat the three relevant sign-bits to one vector
 
-                case (command) is
+                case (cmd) is
                     ------------------------------------------------------------ -- MOVS Rd, #(imm8)
                     when MOVS_imm8 =>                                       
                         -- APSR.N = result<31>;
@@ -108,9 +96,10 @@ begin
                     ------------------------------------------------------------ -- SBCS <Rdn>,<Rm>   
                     ------------------------------------------------------------ -- RSBS <Rd>,<Rn>,#0
                     ------------------------------------------------------------ -- CMP <Rn>,<Rm>
+                    ------------------------------------------------------------ -- CMN <Rn>,<Rm>     
                     when ADDS_imm3 | ADDS | ADDS_imm8 | ADCS | 
                           SUBS | SUBS_imm8 | SBCS | RSBS |
-                          CMP  =>    
+                          CMP | CMN =>    
                         -- APSR.N = result<31>;
                         -- APSR.Z = IsZeroBit(result);
                         -- APSR.C = carry;
@@ -135,7 +124,7 @@ begin
             status_flags <= (others => '0');
          end if;      
         
-end process cmd_p;
+    end process cmd_p;
 
     flags_o.N <= N;
     flags_o.Z <= Z;
