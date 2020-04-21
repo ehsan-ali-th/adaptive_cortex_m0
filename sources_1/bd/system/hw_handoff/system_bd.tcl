@@ -40,7 +40,7 @@ if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
 
 # The design that will be created by this Tcl script contains the following 
 # module references:
-# cortex_m0_core
+# bus_matrix, cortex_m0_core
 
 # Please add the sources of those modules before sourcing this Tcl script.
 
@@ -177,8 +177,8 @@ proc create_root_design { parentCell } {
    CONFIG.POLARITY {ACTIVE_HIGH} \
  ] $reset
 
-  # Create instance: BRAM_32KB_0, and set properties
-  set BRAM_32KB_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:blk_mem_gen:8.4 BRAM_32KB_0 ]
+  # Create instance: BRAM_32KB_CODE, and set properties
+  set BRAM_32KB_CODE [ create_bd_cell -type ip -vlnv xilinx.com:ip:blk_mem_gen:8.4 BRAM_32KB_CODE ]
   set_property -dict [ list \
    CONFIG.Byte_Size {9} \
    CONFIG.Coe_File {../../../../program.coe} \
@@ -201,8 +201,33 @@ proc create_root_design { parentCell } {
    CONFIG.Write_Width_A {32} \
    CONFIG.Write_Width_B {32} \
    CONFIG.use_bram_block {Stand_Alone} \
- ] $BRAM_32KB_0
+ ] $BRAM_32KB_CODE
 
+  # Create instance: BRAM_32k_DATA, and set properties
+  set BRAM_32k_DATA [ create_bd_cell -type ip -vlnv xilinx.com:ip:blk_mem_gen:8.4 BRAM_32k_DATA ]
+  set_property -dict [ list \
+   CONFIG.Byte_Size {9} \
+   CONFIG.EN_SAFETY_CKT {false} \
+   CONFIG.Enable_32bit_Address {false} \
+   CONFIG.Fill_Remaining_Memory_Locations {true} \
+   CONFIG.Register_PortA_Output_of_Memory_Primitives {false} \
+   CONFIG.Use_Byte_Write_Enable {false} \
+   CONFIG.Use_RSTA_Pin {false} \
+   CONFIG.Write_Depth_A {32768} \
+   CONFIG.use_bram_block {Stand_Alone} \
+ ] $BRAM_32k_DATA
+
+  # Create instance: bus_matrix_0, and set properties
+  set block_name bus_matrix
+  set block_cell_name bus_matrix_0
+  if { [catch {set bus_matrix_0 [create_bd_cell -type module -reference $block_name $block_cell_name] } errmsg] } {
+     catch {common::send_msg_id "BD_TCL-105" "ERROR" "Unable to add referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   } elseif { $bus_matrix_0 eq "" } {
+     catch {common::send_msg_id "BD_TCL-106" "ERROR" "Unable to referenced block <$block_name>. Please add the files for ${block_name}'s definition into the project."}
+     return 1
+   }
+  
   # Create instance: clk_wiz_0, and set properties
   set clk_wiz_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:clk_wiz:6.0 clk_wiz_0 ]
   set_property -dict [ list \
@@ -253,42 +278,32 @@ proc create_root_design { parentCell } {
    CONFIG.S_PROGRAM_MEMORY_ENDIAN {true} \
  ] $cortex_m0_core_0
 
-  # Create instance: xlslice_0, and set properties
-  set xlslice_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_0 ]
-  set_property -dict [ list \
-   CONFIG.DIN_FROM {1} \
-   CONFIG.DIN_TO {1} \
-   CONFIG.DIN_WIDTH {2} \
-   CONFIG.DOUT_WIDTH {1} \
- ] $xlslice_0
-
-  # Create instance: xlslice_1, and set properties
-  set xlslice_1 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlslice:1.0 xlslice_1 ]
-  set_property -dict [ list \
-   CONFIG.DIN_FROM {16} \
-   CONFIG.DIN_TO {2} \
-   CONFIG.DOUT_WIDTH {15} \
- ] $xlslice_1
-
   # Create interface connections
   connect_bd_intf_net -intf_net clk_300mhz_1 [get_bd_intf_ports clk_300mhz] [get_bd_intf_pins clk_wiz_0/CLK_IN1_D]
 
   # Create port connections
-  connect_bd_net -net BRAM_32KB_0_douta [get_bd_pins BRAM_32KB_0/douta] [get_bd_pins cortex_m0_core_0/HRDATA]
-  connect_bd_net -net clk_wiz_0_CLK [get_bd_pins BRAM_32KB_0/clka] [get_bd_pins clk_wiz_0/CLK] [get_bd_pins cortex_m0_core_0/HCLK]
-  connect_bd_net -net clk_wiz_0_locked [get_bd_pins clk_wiz_0/locked] [get_bd_pins cortex_m0_core_0/HRESETn]
+  connect_bd_net -net BRAM_32KB_CODE_douta [get_bd_pins BRAM_32KB_CODE/douta] [get_bd_pins bus_matrix_0/code_bram_DOUTA]
+  connect_bd_net -net BRAM_32k_DATA_douta [get_bd_pins BRAM_32k_DATA/douta] [get_bd_pins bus_matrix_0/data_bram_DOUTA]
+  connect_bd_net -net bus_matrix_0_code_bram_ADDRA [get_bd_pins BRAM_32KB_CODE/addra] [get_bd_pins bus_matrix_0/code_bram_ADDRA]
+  connect_bd_net -net bus_matrix_0_code_bram_DINA [get_bd_pins BRAM_32KB_CODE/dina] [get_bd_pins bus_matrix_0/code_bram_DINA]
+  connect_bd_net -net bus_matrix_0_code_bram_ENA [get_bd_pins BRAM_32KB_CODE/ena] [get_bd_pins bus_matrix_0/code_bram_ENA]
+  connect_bd_net -net bus_matrix_0_code_bram_WEA [get_bd_pins BRAM_32KB_CODE/wea] [get_bd_pins bus_matrix_0/code_bram_WEA]
+  connect_bd_net -net bus_matrix_0_cortex_m0_HRDATA [get_bd_pins bus_matrix_0/cortex_m0_HRDATA] [get_bd_pins cortex_m0_core_0/HRDATA]
+  connect_bd_net -net bus_matrix_0_data_bram_ADDRA [get_bd_pins BRAM_32k_DATA/addra] [get_bd_pins bus_matrix_0/data_bram_ADDRA]
+  connect_bd_net -net bus_matrix_0_data_bram_DINA [get_bd_pins BRAM_32k_DATA/dina] [get_bd_pins bus_matrix_0/data_bram_DINA]
+  connect_bd_net -net bus_matrix_0_data_bram_ENA [get_bd_pins BRAM_32k_DATA/ena] [get_bd_pins bus_matrix_0/data_bram_ENA]
+  connect_bd_net -net bus_matrix_0_data_bram_WEA [get_bd_pins BRAM_32k_DATA/wea] [get_bd_pins bus_matrix_0/data_bram_WEA]
+  connect_bd_net -net clk_wiz_0_CLK [get_bd_pins BRAM_32KB_CODE/clka] [get_bd_pins BRAM_32k_DATA/clka] [get_bd_pins bus_matrix_0/clk] [get_bd_pins clk_wiz_0/CLK] [get_bd_pins cortex_m0_core_0/HCLK]
+  connect_bd_net -net clk_wiz_0_locked [get_bd_pins bus_matrix_0/reset] [get_bd_pins clk_wiz_0/locked] [get_bd_pins cortex_m0_core_0/HRESETn]
   connect_bd_net -net constant_0_16bit_dout [get_bd_pins constant_0_16bit/dout] [get_bd_pins cortex_m0_core_0/IRQ]
   connect_bd_net -net constant_0_dout [get_bd_pins constant_0/dout] [get_bd_pins cortex_m0_core_0/HRESP] [get_bd_pins cortex_m0_core_0/NMI] [get_bd_pins cortex_m0_core_0/RXEV]
-  connect_bd_net -net cortex_m0_core_0_HADDR [get_bd_pins cortex_m0_core_0/HADDR] [get_bd_pins xlslice_1/Din]
-  connect_bd_net -net cortex_m0_core_0_HTRANS [get_bd_pins cortex_m0_core_0/HTRANS] [get_bd_pins xlslice_0/Din]
-  connect_bd_net -net cortex_m0_core_0_HWDATA [get_bd_pins BRAM_32KB_0/dina] [get_bd_pins cortex_m0_core_0/HWDATA]
-  connect_bd_net -net cortex_m0_core_0_HWRITE [get_bd_pins BRAM_32KB_0/wea] [get_bd_pins cortex_m0_core_0/HWRITE]
+  connect_bd_net -net cortex_m0_core_0_HADDR [get_bd_pins bus_matrix_0/cortex_m0_HADDR] [get_bd_pins cortex_m0_core_0/HADDR]
+  connect_bd_net -net cortex_m0_core_0_HWDATA [get_bd_pins bus_matrix_0/cortex_m0_HWDATA] [get_bd_pins cortex_m0_core_0/HWDATA]
+  connect_bd_net -net cortex_m0_core_0_HWRITE [get_bd_pins bus_matrix_0/cortex_m0_HWRITE] [get_bd_pins cortex_m0_core_0/HWRITE]
   connect_bd_net -net cortex_m0_core_0_LOCKUP [get_bd_ports LED0] [get_bd_pins cortex_m0_core_0/LOCKUP]
   connect_bd_net -net cortex_m0_core_0_SLEEPING [get_bd_ports LED1] [get_bd_pins cortex_m0_core_0/SLEEPING]
   connect_bd_net -net reset_1 [get_bd_ports reset] [get_bd_pins clk_wiz_0/reset]
   connect_bd_net -net xlconstant_0_dout [get_bd_pins constant_1/dout] [get_bd_pins cortex_m0_core_0/HREADY]
-  connect_bd_net -net xlslice_0_Dout [get_bd_pins BRAM_32KB_0/ena] [get_bd_pins xlslice_0/Dout]
-  connect_bd_net -net xlslice_1_Dout [get_bd_pins BRAM_32KB_0/addra] [get_bd_pins xlslice_1/Dout]
 
   # Create address segments
 

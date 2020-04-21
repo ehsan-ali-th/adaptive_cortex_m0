@@ -35,16 +35,26 @@ package helper_funcs is
     function conv_to_string ( a: std_logic_vector) return string;
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     function to_std_logic (in_bit: bit) return std_logic;
+    function to_std_logic (in_bit: boolean) return std_logic;
+
 
     type core_state_t is (
         s_RESET, 
-        s_EXEC_INSTA_START, 
+        s_RUN,
+        --s_EXEC_INSTA_START, 
         s_EXEC_INSTA, 
         s_EXEC_INSTB, 
         s_PC_UPDATED_INVALID,
         s_EXEC_INSTA_INVALID,
         s_EXEC_INSTB_INVALID,
-        s_PC_UNALIGNED   
+        s_PC_UNALIGNED,
+        s_REFETCH_INSTA,
+        s_REFETCH_INSTB
+--        s_INSTA_MEM_ACCESS,
+--        s_INSTB_MEM_ACCESS,
+--        s_INSTA_AFTER_MEM_ACCESS,
+--        s_INSTB_AFTER_MEM_ACCESS,
+--        s_MEM_ACCESS   
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -55,6 +65,8 @@ package helper_funcs is
         MULS,
         CMP, CMN, CMP_imm8,
         ANDS, EORS, ORRS, BICS, MVNS, TST,
+        RORS,
+        LDR_imm5,LDR_imm8,
         NOT_DEF
         );  
         
@@ -116,6 +128,17 @@ package body helper_funcs is
     variable  ret : std_logic;
   begin
     if (in_bit = '0') then
+        ret := '0';
+    else
+        ret := '1';
+    end if;   
+     return ret; 
+  end function;
+  
+    function to_std_logic (in_bit: boolean) return std_logic is
+    variable  ret : std_logic;
+  begin
+    if (in_bit = false) then
         ret := '0';
     else
         ret := '1';

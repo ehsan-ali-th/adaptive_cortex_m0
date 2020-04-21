@@ -38,39 +38,39 @@ use xil_defaultlib.helper_funcs.all;
 entity cortex_m0_core is
     generic (S_PROGRAM_MEMORY_ENDIAN: boolean := FALSE);           -- little endian = 0, big endian = 1
     Port ( 
-            HCLK : in STD_LOGIC;                        -- Clock
-         HRESETn : in STD_LOGIC;                        -- Asynchronous reset
+            HCLK : in std_logic;                        -- Clock
+         HRESETn : in std_logic;                        -- Asynchronous reset
   
 
             -- AMBA 3 AHB-LITE INTERFACE INPUTS
-          HRDATA : in STD_LOGIC_VECTOR (31 downto 0);   -- AHB read-data
-          HREADY : in STD_LOGIC;                        -- AHB stall signal
-           HRESP : in STD_LOGIC;                        -- AHB error response
+          HRDATA : in std_logic_vector (31 downto 0);   -- AHB read-data
+          HREADY : in std_logic;                        -- AHB stall signal
+           HRESP : in std_logic;                        -- AHB error response
 
             -- INTERRUPT INPUTS
-             NMI : in STD_LOGIC;
-             IRQ : in STD_LOGIC_VECTOR (15 downto 0);
+             NMI : in std_logic;
+             IRQ : in std_logic_vector (15 downto 0);
             
             -- EVENT INPUT
-            RXEV : in STD_LOGIC;
+            RXEV : in std_logic;
 
             -- AMBA 3 AHB-LITE INTERFACE OUTPUTS
-           HADDR : out STD_LOGIC_VECTOR (31 downto 0);  -- AHB transaction address  format [Lower byte-Upper byte | Lower byte-Upper byte]
-          HBURST : out STD_LOGIC_VECTOR (2 downto 0);   -- AHB burst: tied to single
-       HMASTLOCK : out STD_LOGIC;                       -- AHB locked transfer (always zero)
-           HPROT : out STD_LOGIC_VECTOR (3 downto 0);   -- AHB protection: priv; data or inst
-           HSIZE : out STD_LOGIC_VECTOR (2 downto 0);   -- AHB size: byte, half-word or word
-          HTRANS : out STD_LOGIC_VECTOR (1 downto 0);   -- AHB transfer: non-sequential only
-          HWDATA : out STD_LOGIC_VECTOR (31 downto 0);  -- AHB write-data
-          HWRITE : out STD_LOGIC;                       -- AHB write control
+           HADDR : out std_logic_vector (31 downto 0);  -- AHB transaction address  format [Lower byte-Upper byte | Lower byte-Upper byte]
+          HBURST : out std_logic_vector (2 downto 0);   -- AHB burst: tied to single
+       HMASTLOCK : out std_logic;                       -- AHB locked transfer (always zero)
+           HPROT : out std_logic_vector (3 downto 0);   -- AHB protection: priv; data or inst
+           HSIZE : out std_logic_vector (2 downto 0);   -- AHB size: byte, half-word or word
+          HTRANS : out std_logic_vector (1 downto 0);   -- AHB transfer: non-sequential only
+          HWDATA : out std_logic_vector (31 downto 0);  -- AHB write-data
+          HWRITE : out std_logic;                       -- AHB write control
             
             -- STATUS OUPUTS
-        LOCKUP   : out STD_LOGIC;    
-      SLEEPING   : out STD_LOGIC;    
-   SYSTESETREQ   : out STD_LOGIC;    
+        LOCKUP   : out std_logic;    
+      SLEEPING   : out std_logic;    
+   SYSTESETREQ   : out std_logic;    
             
             -- EVENT OUTPUT
-          TXEV   : out STD_LOGIC
+          TXEV   : out std_logic
         );
 end cortex_m0_core;
 
@@ -95,13 +95,16 @@ architecture Behavioral of cortex_m0_core is
     Port ( 
         run : in std_logic; 
         instruction : in STD_LOGIC_VECTOR (15 downto 0);
+        state: in core_state_t;
         destination_is_PC : out std_logic;
         thumb : out std_logic;                               -- indicates wether the decoded instruction is 16-bit thumb or 32-bit  
         gp_WR_addr : out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
-        execution_cmd: out executor_cmds_t
+        execution_cmd: out executor_cmds_t;
+        --use_PC : out boolean
+        access_mem: out boolean
     );
     end component;
     
@@ -123,7 +126,9 @@ architecture Behavioral of cortex_m0_core is
              result : out std_logic_vector(31 downto 0);
              alu_temp_32 : out std_logic;
              overflow_status : out std_logic_vector(2 downto 0);
-             WE: out std_logic
+             WE: out std_logic;
+             data_mem_addr_out : out std_logic_vector(31 downto 0);
+             mem_access : out boolean
          );
     end component;
     
@@ -133,8 +138,13 @@ architecture Behavioral of cortex_m0_core is
             reset : in std_logic;
             run : in std_logic;
             PC_updated : in std_logic;
+            access_mem : in boolean;
             PC_2bit_LSB :  std_logic_vector(1 downto 0);
-            state : out core_state_t
+           -- use_PC_value: in boolean;
+            instr_ptr: out std_logic;
+            state : out core_state_t;
+            next_state : out core_state_t;
+            m0_previous_state : out core_state_t
         );
     end component;
     
@@ -143,12 +153,21 @@ architecture Behavioral of cortex_m0_core is
             clk : in std_logic;
             reset : in std_logic;
             result : in std_logic_vector(31 downto 0);
-            alu_temp_32 : in std_logic;
+            C_in : in std_logic;
             overflow_status : in std_logic_vector(2 downto 0);
             cmd: in executor_cmds_t;
             set_flags : in boolean; 
             flags_o : out flag_t
             );
+    end component;
+    
+    component pipeline_invalidator is
+        Port (
+            clk : in std_logic;
+            reset : in std_logic;
+            trigger : in boolean;
+            invalidate_pipeline : out boolean
+         );
     end component;
     
     -- Declare clock interface
@@ -164,9 +183,9 @@ architecture Behavioral of cortex_m0_core is
 	-- signals
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
-    signal PC:  STD_LOGIC_VECTOR (31 downto 0);
-    signal PC_VALUE:  STD_LOGIC_VECTOR (31 downto 0);
-    signal PC_plus_4:  STD_LOGIC_VECTOR (31 downto 0);
+    signal PC:  std_logic_vector (31 downto 0);
+    signal PC_VALUE:  std_logic_vector (31 downto 0);
+    signal PC_plus_4:  std_logic_vector (31 downto 0);
     signal internal_reset: std_logic := '1';
     signal run: std_logic := '0'; 
     signal load_current_inst_permitted: std_logic := '0'; 
@@ -174,8 +193,11 @@ architecture Behavioral of cortex_m0_core is
     signal valid: std_logic := '0';
     signal decode_phase : std_logic;     
     signal decode_phase_value : std_logic;     
-    signal PC_decode:  STD_LOGIC_VECTOR (31 downto 0);
-    signal PC_execute:  STD_LOGIC_VECTOR (31 downto 0);
+    signal PC_decode:  std_logic_vector (31 downto 0);
+    signal PC_execute:  std_logic_vector (31 downto 0);
+    signal fetched_32_bit_instruction:  std_logic_vector (31 downto 0) := (others => '0');
+    signal instA_access_mem : boolean;
+    signal instB_access_mem : boolean;
     
 	-- Registers
 	signal gp_WR_addr : std_logic_vector(3 downto 0) := (others => '0');	
@@ -187,10 +209,16 @@ architecture Behavioral of cortex_m0_core is
 	signal gp_ram_dataA : std_logic_vector(31 downto 0);			
 	signal gp_ram_dataB : std_logic_vector(31 downto 0);	
 	signal gp_addrA_executor : std_logic_vector(31 downto 0);	
+	signal gp_data_in : std_logic_vector(31 downto 0);	
     
     -- decoder signals
     signal imm8:  std_logic_vector (7 downto 0);
 	signal WE :  std_logic;	
+	signal use_PC:  boolean;
+--	signal use_PC_value:  boolean;
+    signal access_mem:  boolean;
+    signal access_mem_value:  boolean;
+
 	
 	-- executor signals
     signal command:  executor_cmds_t := NOT_DEF;
@@ -201,16 +229,23 @@ architecture Behavioral of cortex_m0_core is
 	signal PC_updated : std_logic;	
 	signal cmd_out : executor_cmds_t;	
 	signal set_flags : boolean;
+	signal mem_access_exec : boolean;
 	signal alu_temp_32 : std_logic;
 	signal overflow_status : std_logic_vector (2 downto 0);
-	
-	
+	signal data_mem_addr_out : std_logic_vector (31 downto 0);
+	signal executor_opernd_B : std_logic_vector (31 downto 0);
 	
 	-- core state signals
 	signal m0_core_state: core_state_t; 
+    signal m0_next_state : core_state_t;
+    signal m0_previous_state : core_state_t;
     signal flags       :  flag_t;
-  
+    signal instr_ptr : std_logic;
     
+    -- pipeline_invalidator signals
+	signal invalidate_pipeline : boolean;
+    
+
     -- aliases
     -- Little endian:
     -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
@@ -219,12 +254,19 @@ architecture Behavioral of cortex_m0_core is
     alias inst_A_2nd_half : std_logic_vector(7 downto 0) is HRDATA (23 downto 16);
     alias inst_B_1st_half : std_logic_vector(7 downto 0) is HRDATA (15 downto 8);
     alias inst_B_2nd_half : std_logic_vector(7 downto 0) is HRDATA (7 downto 0);
+    
+    alias f32_inst_A_1st_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (31 downto 24);
+    alias f32_inst_A_2nd_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (23 downto 16);
+    alias f32_inst_B_1st_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (15 downto 8);
+    alias f32_inst_B_2nd_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (7 downto 0);
+    
+    
 
     signal current_instruction: std_logic_vector (15 downto 0);
 	
 	-- Simulation signals  
 	--synthesis translate off
-    signal cortex_m0_opcode : string(1 to 14) := "              ";
+    signal cortex_m0_opcode : string(1 to 16) := "                ";
     signal cortex_m0_status : string(1 to 18) := "NN,NZ,NC,NV, -----";
 	--synthesis translate on
 						
@@ -235,7 +277,7 @@ begin
         reset => internal_reset,
         WE => WE,
         gp_WR_addr => gp_WR_addr, 
-        gp_data_in => result,
+        gp_data_in => gp_data_in,
         gp_addrA => gp_addrA,
         gp_addrB => gp_addrB,
         gp_ram_dataA => gp_ram_dataA,
@@ -245,13 +287,15 @@ begin
     m0_decoder: decoder port map ( 
         run => run,
         instruction => current_instruction,
+        state => m0_core_state,
         destination_is_PC => destination_is_PC_value,
         thumb => thumb,
         gp_WR_addr => gp_WR_addr_value,
         gp_addrA => gp_addrA_value,
         gp_addrB => gp_addrB_value,
         imm8 => imm8,
-        execution_cmd => command_value
+        execution_cmd => command_value,
+        access_mem => access_mem_value
         );
     
      m0_executor: executor port map (
@@ -259,7 +303,7 @@ begin
              reset => internal_reset,
              run => run,
              operand_A => gp_addrA_executor,	
-             operand_B => gp_ram_dataB,	
+             operand_B => executor_opernd_B,	
              command => command, 	
              imm8_z_ext => imm8_z_ext,
              destination_is_PC => destination_is_PC,
@@ -271,28 +315,42 @@ begin
              result => result,
              alu_temp_32 => alu_temp_32,
              overflow_status => overflow_status,
-             WE => WE
+             WE => WE,
+             data_mem_addr_out => data_mem_addr_out,
+             mem_access => mem_access_exec
          );
          
-    m0_core_state_m: core_state port map (
+      m0_core_state_m: core_state port map (
             clk => HCLK,
             reset => internal_reset,
             run => run,
             PC_updated => PC_updated,
+            access_mem => access_mem_value,
             PC_2bit_LSB => PC(1 downto 0),
-            state => m0_core_state
+           -- use_PC_value => use_PC_value,
+            instr_ptr => instr_ptr,
+            state => m0_core_state,
+            next_state => m0_next_state,
+            m0_previous_state => m0_previous_state 
         ); 
         
      m0_core_flags: status_flags port map (
             clk => HCLK,
             reset => internal_reset,
             result => result,
-            alu_temp_32 => alu_temp_32,
+            C_in => alu_temp_32,
             cmd => cmd_out,
             set_flags => set_flags,
             overflow_status => overflow_status,
             flags_o  => flags
         );
+        
+     m0_pipeline_invalidator: pipeline_invalidator port map (
+        clk => HCLK,
+        reset => internal_reset,
+        trigger => access_mem_value,
+        invalidate_pipeline => invalidate_pipeline
+    );
     
      internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -309,12 +367,22 @@ begin
      end process;       
     
      -- Drives the PC   
-    drive_pc_p: process (HCLK) begin
+    drive_pc_p: process (HCLK) begin    
         if (rising_edge(HCLK)) then
-            PC <= PC_value;
+--            if (invalidate_pipeline = true) then 
+--                PC <= PC;  
+--                PC_decode <= PC_decode;
+--                PC_execute <= PC_execute;
+--            else
+           -- if (m0_core_state = s_EXEC_INSTB or m0_core_state = s_RESET) then 
+                PC <= PC_value;  
+           -- else
+             --   PC <= PC;
+            --end if;        
             PC_decode <= PC;
             PC_execute <= PC_decode;
-        end if;
+           -- end if;    
+         end if;
     end process;
     
     PC_plus_4 <=  STD_LOGIC_VECTOR (unsigned (PC) + 4);
@@ -341,74 +409,198 @@ begin
                 decode_phase_value <= not decode_phase;
     end process;
     
-    pc_value_p: process  (HCLK) begin
-        if (rising_edge(HCLK)) then
+    pc_value_p: process  (m0_core_state, internal_reset, run, PC_updated, result, PC_plus_4, 
+                            access_mem_value, PC, instA_access_mem, instB_access_mem) begin
             case (m0_core_state) is
-                when s_RESET =>   
-                    if (internal_reset = '1') then
-                        PC_VALUE <= x"0000_0000";    -- zero    
-                    else 
-                        if (run = '1') then 
-                            PC_VALUE <= x"0000_0004";    -- 4
-                        else
-                            PC_VALUE <= x"0000_0000";    -- 4
-                        end if;    
-                    end if;    
-                when s_EXEC_INSTA_START =>      PC_VALUE <= x"0000_0004";
+                when s_RESET => PC_VALUE <= x"0000_0000";    -- zero    
+                when s_RUN =>   PC_VALUE <= x"0000_0000";
                 when s_EXEC_INSTA =>
                     if (PC_updated = '1') then
                         PC_VALUE <= result;         -- Result
                     else
-                        PC_VALUE <= PC_VALUE;       -- No change  
+                        if (access_mem_value = true) then
+                            PC_VALUE <= PC; 
+                        else
+                            if (instB_access_mem = true) then
+                                PC_VALUE <= PC;
+                            else
+                                PC_VALUE <= PC_plus_4;      -- PC + 4
+                            end if;      
+                        end if;    
                     end if;
                 when s_EXEC_INSTB => 
                     if (PC_updated = '1') then
                         PC_VALUE <= result;         -- Result
                     else
-                        PC_VALUE <= PC_plus_4;      -- PC + 4
+                        if (access_mem_value = true) then
+                            if (instA_access_mem = true) then
+                                PC_VALUE <= PC_plus_4;      -- PC + 4
+                            else
+                                if (instB_access_mem = true) then
+                                    PC_VALUE <= PC_plus_4;      -- PC + 4
+                                else
+                                    PC_VALUE <= PC;
+                                end if;    
+                            end if;      
+                        else
+                           PC_VALUE <= PC;  
+                        end if;
+--                        if (m0_previous_state = s_EXEC_INSTA) then
+                        
+--                        else
+--                            PC_VALUE <= PC_plus_4;      -- PC + 4          
+--                        end if;     
                     end if;
-                when s_PC_UPDATED_INVALID =>    PC_VALUE <= PC_VALUE;       -- No change
-                when s_EXEC_INSTA_INVALID =>    PC_VALUE <= PC_VALUE;       -- No change
-                when s_EXEC_INSTB_INVALID =>    PC_VALUE <= PC_plus_4;      -- PC + 4
-                when others =>                  PC_VALUE <= x"0000_0000"; 
+                when s_PC_UPDATED_INVALID =>        --PC_VALUE <= PC_VALUE;       -- No change
+                when s_EXEC_INSTA_INVALID =>        --PC_VALUE <= PC_VALUE;       -- No change
+                when s_EXEC_INSTB_INVALID =>        PC_VALUE <= PC_plus_4;      -- PC + 4
+                when s_PC_UNALIGNED =>              --PC_VALUE <= PC_VALUE;       -- No change
+                when s_REFETCH_INSTA =>             
+                        if (instB_access_mem = true) then
+                            PC_VALUE <= PC;
+                        else
+                            PC_VALUE <= PC_plus_4;      -- PC + 4  
+                        end if;     
+                when s_REFETCH_INSTB =>             --PC_VALUE <= PC_VALUE;       -- No change
+                
+--                when s_INSTA_MEM_ACCESS =>          PC_VALUE <= PC_VALUE;       -- No change
+--                when s_INSTB_MEM_ACCESS =>         
+--                      if (PC_updated = '1') then
+--                        PC_VALUE <= result;         -- Result
+--                    else
+--                        PC_VALUE <= PC_plus_4;      -- PC + 4
+--                    end if;
+--                when s_INSTA_AFTER_MEM_ACCESS =>    PC_VALUE <= PC_VALUE;       -- No change
+--                when s_INSTB_AFTER_MEM_ACCESS =>    PC_VALUE <= PC_VALUE;       -- No change
+                   
+----                when s_INSTA_AFTER_MEM_ACCESS =>    
+----                    if (PC_updated = '1') then
+----                        PC_VALUE <= result;         -- Result
+----                    else
+----                        PC_VALUE <= PC_VALUE;       -- No change  
+----                    end if;
+----                when s_INSTB_AFTER_MEM_ACCESS =>    
+----                    if (PC_updated = '1') then
+----                        PC_VALUE <= result;         -- Result
+----                    else
+----                        PC_VALUE <= PC_plus_4;      -- PC + 4
+----                    end if;
+--                when s_MEM_ACCESS =>                PC_VALUE <= PC_VALUE;       -- No change
+                when others =>                      PC_VALUE <= x"0000_0000"; 
             end case;
-         end if;
      end process;
     
 
-    Select_Inst_A_B_p: process  (internal_reset, run, m0_core_state, inst_A_2nd_half, inst_A_1st_half, inst_B_2nd_half, inst_B_1st_half) begin
+    Select_Inst_A_B_p: process  (internal_reset, run, m0_core_state, 
+                                 inst_A_2nd_half, inst_A_1st_half, inst_B_2nd_half, inst_B_1st_half,
+                                 f32_inst_A_2nd_half, f32_inst_A_1st_half, f32_inst_B_2nd_half, f32_inst_B_1st_half) begin
         if (internal_reset = '0') then  
             if (run = '1') then  
                 if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then 
-                    if (m0_core_state = s_EXEC_INSTA or m0_core_state = s_EXEC_INSTA_START or m0_core_state = s_EXEC_INSTA_INVALID) then 
-                        current_instruction <= inst_A_2nd_half & inst_A_1st_half;
-                    elsif (m0_core_state = s_EXEC_INSTB or m0_core_state = s_EXEC_INSTB_INVALID or m0_core_state = s_PC_UNALIGNED) then
-                        current_instruction <= inst_B_2nd_half & inst_B_1st_half;
-                    else
-                        current_instruction <= (others => '0');    
-                    end if;
+--                    if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTB_MEM_ACCESS) then
+--                        -- no change
+--                    elsif (m0_core_state = s_INSTB_AFTER_MEM_ACCESS) then     
+--                            current_instruction <= f32_inst_B_2nd_half & f32_inst_B_1st_half;        
+--                    elsif (m0_core_state = s_INSTA_AFTER_MEM_ACCESS) then     
+--                            current_instruction <= f32_inst_A_2nd_half & f32_inst_A_1st_half;        
+--                    else
+                        if (m0_core_state = s_EXEC_INSTA or 
+                            --m0_core_state = s_EXEC_INSTA_START or 
+                            m0_core_state = s_EXEC_INSTA_INVALID or
+                            m0_core_state = s_REFETCH_INSTA) then 
+                            current_instruction <= inst_A_2nd_half & inst_A_1st_half;
+                        elsif (m0_core_state = s_EXEC_INSTB or 
+                               m0_core_state = s_EXEC_INSTB_INVALID or
+                               m0_core_state = s_PC_UNALIGNED or 
+                               m0_core_state = s_REFETCH_INSTB) then
+                            current_instruction <= inst_B_2nd_half & inst_B_1st_half;
+                        else
+                            current_instruction <= (others => '0');    
+                        end if;
+--                    end if;
                 else
-                    if (m0_core_state = s_EXEC_INSTA or m0_core_state = s_EXEC_INSTA_START or m0_core_state = s_EXEC_INSTA_INVALID) then 
-                        current_instruction <= inst_A_1st_half & inst_A_2nd_half;
-                    elsif (m0_core_state = s_EXEC_INSTB or m0_core_state = s_EXEC_INSTB_INVALID or m0_core_state = s_PC_UNALIGNED) then
-                        current_instruction <= inst_B_1st_half & inst_B_2nd_half;
-                    else
-                        current_instruction <= (others => '0'); 
-                    end if;
+--                    if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTB_MEM_ACCESS) then
+--                        -- no change  
+--                    elsif (m0_core_state = s_INSTB_AFTER_MEM_ACCESS) then     
+--                           current_instruction <= f32_inst_B_1st_half & f32_inst_B_2nd_half;      
+--                    elsif (m0_core_state = s_INSTA_AFTER_MEM_ACCESS) then     
+--                           current_instruction <= f32_inst_A_1st_half & f32_inst_A_2nd_half;       
+--                    else     
+                        if (m0_core_state = s_EXEC_INSTA or 
+                            --m0_core_state = s_EXEC_INSTA_START or 
+                            m0_core_state = s_EXEC_INSTA_INVALID or
+                            m0_core_state = s_REFETCH_INSTA) then 
+                            current_instruction <= inst_A_1st_half & inst_A_2nd_half;
+                        elsif (m0_core_state = s_EXEC_INSTB or 
+                               m0_core_state = s_EXEC_INSTB_INVALID or
+                               m0_core_state = s_PC_UNALIGNED or 
+                               m0_core_state = s_REFETCH_INSTB) then
+                            current_instruction <= inst_B_1st_half & inst_B_2nd_half;
+                        else
+                            current_instruction <= (others => '0'); 
+                        end if;
+--                    end if;        
                 end if;
             end if;    
         end if;
     end process;
     
+    
+    instB_access_mem_p: process (inst_A_1st_half, inst_A_2nd_half,  inst_B_1st_half, inst_B_2nd_half) begin
+         if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then  
+            if (std_match(inst_A_2nd_half, "01001---")) then
+                instB_access_mem <= true;
+            else
+                instB_access_mem <= false;
+            end if;
+            if (std_match(inst_B_2nd_half, "01001---")) then
+                instB_access_mem <= true;
+            else
+                instB_access_mem <= false;
+            end if;
+         else
+            if (std_match(inst_A_1st_half, "01001---")) then
+                instA_access_mem <= true;
+            else
+                instA_access_mem <= false;
+            end if;
+            if (std_match(inst_B_1st_half, "01001---")) then
+                instB_access_mem <= true;
+            else
+                instB_access_mem <= false;
+            end if;
+         end if;   
+        end process;
+    
+    
      regs_p: process (HCLK) begin 
         if (rising_edge(HCLK)) then
             if (internal_reset = '0') then
-                imm8_z_ext <= imm8_z_ext_value;
-                gp_WR_addr <= gp_WR_addr_value;
-                gp_addrA <= gp_addrA_value;
-                gp_addrB <= gp_addrB_value;
-                command <= command_value;
-                destination_is_PC <= destination_is_PC_value;
+--                if (access_mem_value = true) then 
+--                    imm8_z_ext <= imm8_z_ext;
+--                    gp_WR_addr <= gp_WR_addr;
+--                    gp_addrA <= gp_addrA;
+--                    gp_addrB <= gp_addrB;
+--                    command <= command;
+--                    destination_is_PC <= destination_is_PC;
+--                else
+                    imm8_z_ext <= imm8_z_ext_value;
+                    gp_WR_addr <= gp_WR_addr_value;
+                    gp_addrA <= gp_addrA_value;
+                    gp_addrB <= gp_addrB_value;
+                    command <= command_value;
+                    destination_is_PC <= destination_is_PC_value;
+                --end if; 
+--                if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTB_MEM_ACCESS) then
+--                    use_PC  <= false;
+--                else    
+--                    use_PC <= use_PC_value; 
+--                end if; 
+--               if (m0_next_state = s_REFETCH_INSTB) then 
+--                    access_mem <= false;
+--               else     
+                    access_mem <= invalidate_pipeline;
+--               end if;      
             end if;
         end if;
     end process;
@@ -423,12 +615,59 @@ begin
             when SUBS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when SUBS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when CMP_imm8  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when LDR_imm5  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when LDR_imm8  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
     
-    HADDR <= PC;
-    HTRANS <= B"10";
+    
+    haddr_p: process (PC, data_mem_addr_out, use_PC) begin
+        if (use_PC = true) then
+             HADDR <= data_mem_addr_out;  
+            -- HADDR <= PC;
+        else
+             HADDR <= PC;
+        end if;   
+    end process;
+    
+      
+    gp_data_in_p: process (result) begin
+--        if (m0_core_state = s_INSTA_AFTER_MEM_ACCESS or m0_core_state = s_INSTB_AFTER_MEM_ACCESS) then
+--             gp_data_in <= HRDATA;  
+--        else
+--             gp_data_in <= result;
+--        end if;   
+        gp_data_in <= result;
+    end process;
+    
+    executor_opernd_B_p: process (gp_ram_dataB, PC_execute, use_PC) begin
+        if (use_PC = true) then
+             executor_opernd_B <= PC;  
+        else
+             executor_opernd_B <= gp_ram_dataB;
+        end if;   
+    end process;
+    
+--    fetched_32_bit_instruction_p: process (HCLK, HRDATA, m0_core_state) begin
+--         if (rising_edge(HCLK)) then
+--            if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTA_MEM_ACCESS) then
+--                fetched_32_bit_instruction <= HRDATA;  
+--            end if;    
+--        end if;   
+--    end process;
+
+    
+    
+   
+    HBURST <= B"000";
+    HMASTLOCK <= '0';
+    HPROT <= B"0000";
+    HPROT <= B"0000";
+    HSIZE <= "000";
+    HTRANS <= B"00";
+    HWDATA <= (others => '0');
+    HWRITE <= '0';
 
     
 
@@ -451,7 +690,7 @@ begin
         end if;      
     end process;
 
-    simulation_p: process (HCLK, internal_reset, current_instruction)
+    simulation_p: process (internal_reset, current_instruction)
         -- Variables for contents of each register in each bank
         -- variable sim_r0 : std_logic_vector(31 downto 0) := X"0000";
         variable     Rd_decode : string(1 to 2);   -- Rd register specification
@@ -465,145 +704,158 @@ begin
         imm8_decode(1) :=  '#';
         
         -- [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
-        if rising_edge(HCLK) then 
+        --if rising_edge(HCLK) then 
             if internal_reset = '1' then
-                cortex_m0_opcode <= "CORE IS RESET!";
+                cortex_m0_opcode <= "CORE IS RESET!  ";
             else
                 -------------------------------------------------------------------------------------- -- MOVS Rd, #(imm8)
                 if std_match(current_instruction(15 downto 10), "00100-") then                      
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));               
                     imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                     imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
-                    cortex_m0_opcode <= "MOVS " & Rd_decode & "," & imm8_decode & "   ";    
+                    cortex_m0_opcode <= "MOVS " & Rd_decode & "," & imm8_decode & "     ";    
                 -------------------------------------------------------------------------------------- -- MOVS <Rd>,<Rm>     
                 elsif std_match(current_instruction(15 downto 6), "0000000000") then                 
                     Rd_decode(2) := hexcharacter (current_instruction (3 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "MOVS " & Rd_decode & "," & Rm_decode & "    "; 
+                    cortex_m0_opcode <= "MOVS " & Rd_decode & "," & Rm_decode & "      "; 
                 -------------------------------------------------------------------------------------- -- MOV <Rd>,<Rm>  ,  MOV PC, Rm     
                 elsif std_match(current_instruction(15 downto 8), "01000110") then                   
                     Rd_decode(2) := hexcharacter (current_instruction (7) & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
-                    cortex_m0_opcode <= "MOV  " & Rd_decode & "," & Rm_decode & "    ";    
+                    cortex_m0_opcode <= "MOV  " & Rd_decode & "," & Rm_decode & "      ";    
                 -------------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
                 elsif std_match(current_instruction(15 downto 9), "0001110") then                    
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;    
+                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & imm8_decode & "  ";    
                 -------------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,<Rm> 
                 elsif std_match(current_instruction(15 downto 9), "0001100") then                   
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));
-                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";    
+                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";    
                 -------------------------------------------------------------------------------------- -- ADD <Rdn>,<Rm> - ADD PC,<Rm>
                 elsif std_match(current_instruction(15 downto 8), "01000100") then                  
                     Rd_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
-                    cortex_m0_opcode <= "ADD  " & Rd_decode & "," & Rm_decode & "    ";    
+                    cortex_m0_opcode <= "ADD  " & Rd_decode & "," & Rm_decode & "      ";    
                 -------------------------------------------------------------------------------------- -- ADDS <Rdn>,#<imm8>
                 elsif std_match(current_instruction(15 downto 11), "00110") then                      
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
                     imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
                     imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
-                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & imm8_decode & "   ";    
+                    cortex_m0_opcode <= "ADDS " & Rd_decode & "," & imm8_decode & "     ";    
                 -------------------------------------------------------------------------------------- -- ADCS <Rdn>,<Rm>  
                 elsif std_match(current_instruction(15 downto 6), "0100000101") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "    ";   
+                    cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "      ";   
                 -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>  
                 elsif std_match(current_instruction(15 downto 9), "0001111") then                  
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     imm8_decode(3) :=   hexcharacter ('0' & current_instruction (8 downto 6));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & imm8_decode;  
+                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & imm8_decode & "  ";  
                 -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>  
                 elsif std_match(current_instruction(15 downto 9), "0001101") then                  
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6));    
-                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";   
+                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";   
                 -------------------------------------------------------------------------------------- -- SUBS <Rdn>,#<imm8> 
                 elsif std_match(current_instruction(15 downto 11), "00111") then                     
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
                     imm8_decode(2) :=   hexcharacter (current_instruction (7 downto 4));
                     imm8_decode(3) :=   hexcharacter (current_instruction (3 downto 0));
-                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & imm8_decode & "   ";    
+                    cortex_m0_opcode <= "SUBS " & Rd_decode & "," & imm8_decode & "     ";    
                 -------------------------------------------------------------------------------------- -- SBCS <Rdn>,<Rm> 
                 elsif std_match(current_instruction(15 downto 6), "0100000110") then                 
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "SBCS " & Rd_decode & "," & Rm_decode & "    ";   
+                    cortex_m0_opcode <= "SBCS " & Rd_decode & "," & Rm_decode & "      ";   
                 -------------------------------------------------------------------------------------- -- RSBS <Rd>,<Rn>,#0 
                 elsif std_match(current_instruction(15 downto 6), "0100001001") then                 
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "RSBS " & Rd_decode & "," & Rn_decode & "    ";   
+                    cortex_m0_opcode <= "RSBS " & Rd_decode & "," & Rn_decode & "      ";   
                 -------------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>
                 elsif std_match(current_instruction(15 downto 6), "0100001101") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "MULS " & Rd_decode & "," & Rn_decode & "," & Rd_decode & " ";  
+                    cortex_m0_opcode <= "MULS " & Rd_decode & "," & Rn_decode & "," & Rd_decode & "   ";  
                -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm> T1
                elsif std_match(current_instruction(15 downto 6), "0100001010") then                
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "    ";   
+                    cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "      ";   
                -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm> T2
                elsif std_match(current_instruction(15 downto 8), "01000101") then                
                     Rn_decode(2) := hexcharacter (current_instruction(7) & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter (current_instruction (6 downto 3));
-                    cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "    ";   
+                    cortex_m0_opcode <= "CMP  " & Rn_decode & "," & Rm_decode & "      ";   
                -------------------------------------------------------------------------------------- -- CMN <Rn>,<Rm> 
                elsif std_match(current_instruction(15 downto 6), "0100001011") then                
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));
-                    cortex_m0_opcode <= "CMN  " & Rn_decode & "," & Rm_decode & "    ";   
+                    cortex_m0_opcode <= "CMN  " & Rn_decode & "," & Rm_decode & "      ";   
                -------------------------------------------------------------------------------------- -- CMP <Rn>,#<imm8> 
                elsif std_match(current_instruction(15 downto 11), "00101") then                
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8));
                     imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                     imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
-                    cortex_m0_opcode <= "CMP  " & Rd_decode & "," & imm8_decode & "   "; 
-               -------------------------------------------------------------------------------------- --ANDS <Rdn>,<Rm>
+                    cortex_m0_opcode <= "CMP  " & Rd_decode & "," & imm8_decode & "     "; 
+               -------------------------------------------------------------------------------------- -- ANDS <Rdn>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100000000") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
-                    cortex_m0_opcode <= "ANDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
-               -------------------------------------------------------------------------------------- --EORS <Rdn>,<Rm>
+                    cortex_m0_opcode <= "ANDS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";
+               -------------------------------------------------------------------------------------- -- EORS <Rdn>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100000001") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
-                    cortex_m0_opcode <= "EORS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
-               -------------------------------------------------------------------------------------- --ORRS <Rdn>,<Rm>
+                    cortex_m0_opcode <= "EORS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";
+               -------------------------------------------------------------------------------------- -- ORRS <Rdn>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100001100") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
-                    cortex_m0_opcode <= "ORRS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
-               -------------------------------------------------------------------------------------- --BICS <Rdn>,<Rm>
+                    cortex_m0_opcode <= "ORRS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";
+               -------------------------------------------------------------------------------------- -- BICS <Rdn>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100001110") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
-                    cortex_m0_opcode <= "BICS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & " ";
-               -------------------------------------------------------------------------------------- --MVNS <Rd>,<Rm>
+                    cortex_m0_opcode <= "BICS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";
+               -------------------------------------------------------------------------------------- -- MVNS <Rd>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100001111") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
-                    cortex_m0_opcode <= "MVNS " & Rd_decode & "," & Rm_decode &  "    "; 
-               -------------------------------------------------------------------------------------- --TST <Rn>,<Rm>
+                    cortex_m0_opcode <= "MVNS " & Rd_decode & "," & Rm_decode &  "      "; 
+               -------------------------------------------------------------------------------------- -- TST <Rn>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100001000") then                
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
-                    cortex_m0_opcode <= "TST  " & Rn_decode & "," & Rm_decode &  "    "; 
+                    cortex_m0_opcode <= "TST  " & Rn_decode & "," & Rm_decode &  "      "; 
+               -------------------------------------------------------------------------------------- -- RORS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100000111") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "RORS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";
+               -------------------------------------------------------------------------------------- -- LDR <Rt>, [<Rn>{,#<imm5>}]
+               elsif std_match(current_instruction(15 downto 11), "01001") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); --Rt 
+                    imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
+                    imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
+                    cortex_m0_opcode <= "LDR  " & Rd_decode & ",[pc," & imm8_decode & "]";    
+                  
                end if;
             end if;
-        end if;
+       -- end if;
     end process;
  
  --synthesis translate on

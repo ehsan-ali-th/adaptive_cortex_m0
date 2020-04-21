@@ -46,13 +46,16 @@ entity executor is
          destination_is_PC : in std_logic;
          state: in core_state_t;
          current_flags : in flag_t;
+         
          cmd_out: out executor_cmds_t;
          set_flags : out boolean;
          PC_updated: out std_logic;
          result : out std_logic_vector(31 downto 0);
          alu_temp_32 : out std_logic;
          overflow_status : out std_logic_vector(2 downto 0);
-         WE: out std_logic                                          -- Controls the WE pin of register bank. Used to flush the pipeline
+         WE: out std_logic;                                          -- Controls the WE pin of register bank. Used to flush the pipeline
+         data_mem_addr_out : out std_logic_vector(31 downto 0);
+         mem_access : out boolean
      );
 end executor;
 
@@ -77,6 +80,7 @@ architecture Behavioral of executor is
     signal update_PC : std_logic;
     signal current_instruction_mem_location :  std_logic_vector (31 downto 0);
     signal mul_result:  std_logic_vector (31 downto 0);
+    signal data_mem_addr :  unsigned (31 downto 0);
  
 begin
 
@@ -108,12 +112,17 @@ begin
     
     -- This process  flushes the pipeline if PC gets updated.
     WE_p: process  (WE_val, state) begin
-        if (state = s_PC_UPDATED_INVALID or 
+        if ( --state = s_PC_UPDATED_INVALID or 
             state = s_EXEC_INSTA_INVALID or 
             state = s_EXEC_INSTB_INVALID or 
-            state = s_PC_UNALIGNED) then
+            state = s_PC_UNALIGNED 
+           -- or state = s_INSTA_MEM_ACCESS or 
+            --state = s_INSTB_MEM_ACCESS
+            ) then
             WE <= '0';
-        else
+--        elsif (state = s_INSTA_AFTER_MEM_ACCESS or state = s_INSTB_AFTER_MEM_ACCESS) then
+--            WE <= '1';    
+        else    
             WE <= WE_val;
         end if;    
     end process;
@@ -126,12 +135,14 @@ begin
                 mux_ctrl <= B"00";          -- immediate value  
                 update_PC <= '0';
                 set_flags <= true;
+                mem_access <= false;
             ------------------------------------------------------------ -- MOVS <Rd>,<Rm>    
             when MOVS =>                    
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 update_PC <= '0';
                 set_flags <= true;
+                mem_access <= false;
             ------------------------------------------------------------ -- MOV <Rd>,<Rm> | MOV PC, Rm       
             when MOV =>                                                 
                 WE_val <= '1'; 
@@ -139,6 +150,7 @@ begin
                 -- if destination_is_PC = 1 it means d == 15 (destination is PC) then set_flags is always FALSE
                 if (destination_is_PC = '1') then set_flags <= false; else set_flags <= true; end if;
                 if (destination_is_PC = '1') then update_PC <= '1'; else update_PC <= '0'; end if;
+                mem_access <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,#<imm3>      
             when ADDS_imm3 =>                                        
                 WE_val <= '1'; 
@@ -146,6 +158,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,<Rm>       
             when ADDS =>                                            
                 WE_val <= '1'; 
@@ -153,6 +166,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ --  ADD <Rdn>,<Rm>    
             when ADD =>                                             
                 WE_val <= '1'; 
@@ -160,12 +174,14 @@ begin
                 set_flags <= false;
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ --  ADD PC,<Rm>
             when ADD_PC =>    
                 WE_val <= '0'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 update_PC <= '1';
+                mem_access <= false;
             ------------------------------------------------------------ -- ADDS <Rdn>,#<imm8>    
             when ADDS_imm8 =>     
                 WE_val <= '1'; 
@@ -173,6 +189,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ -- ADCS <Rdn>,<Rm>  
             when ADCS =>                                            
                 WE_val <= '1'; 
@@ -180,6 +197,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,<Rm>
             when SUBS =>                                            
                 WE_val <= '1'; 
@@ -187,6 +205,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,#<imm3>  
             when SUBS_imm3 =>                                       
                 WE_val <= '1'; 
@@ -194,6 +213,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';   
+                mem_access <= false;
             ------------------------------------------------------------ -- SUBS <Rdn>,#<imm8>
             when SUBS_imm8 =>                                      
                 WE_val <= '1'; 
@@ -201,6 +221,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- SBCS <Rdn>,<Rm>    
             when SBCS =>                                            
                 WE_val <= '1'; 
@@ -208,6 +229,7 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
+                mem_access <= false;
             ------------------------------------------------------------ -- RSBS <Rd>,<Rn>,#0 
             when RSBS =>                                               
                 WE_val <= '1'; 
@@ -215,66 +237,98 @@ begin
                 set_flags <= true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';    
+                mem_access <= false;
             ------------------------------------------------------------ -- MULS <Rdm>,<Rn>,<Rdm>     
             when MULS =>                                               
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- CMP <Rn>,<Rm>     T1, T2  
             when CMP =>                                               
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- CMN <Rn>,<Rm>    
             when CMN =>                                               
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- CMP <Rn>,#<imm8>     
             when CMP_imm8 =>                                               
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- ANDS <Rdn>,<Rm>     
             when ANDS =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- EORS <Rdn>,<Rm>     
             when EORS =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- ORRS <Rdn>,<Rm>     
             when ORRS =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- BICS <Rdn>,<Rm>     
             when BICS =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- MVNS <Rd>,<Rm>     
             when MVNS =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
             ------------------------------------------------------------ -- TST <Rn>,<Rm>     
             when TST =>                                               
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 update_PC <= '0'; 
+                mem_access <= false;
+            ------------------------------------------------------------ -- RORS <Rdn>,<Rm>    
+            when RORS =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                update_PC <= '0'; 
+                mem_access <= false;
+            ------------------------------------------------------------ --  LDR <Rt>, [<Rn>{,#<imm5>}]   
+            when LDR_imm5 =>                                               
+                WE_val <= '1';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                update_PC <= '0'; 
+                mem_access <= true;
+            ------------------------------------------------------------ --  LDR <Rt>,<label>
+            when LDR_imm8 =>                                               
+                WE_val <= '0';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                update_PC <= '0'; 
+                mem_access <= true;
             ------------------------------------------------------------ -- All unefined instructions        
             when others  => 
                 WE_val <= '0'; 
@@ -282,10 +336,14 @@ begin
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0';
+                mem_access <= false;
        end case;  
      end process;
      
-    alu_p: process  (command, state, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, mul_result, current_flags) begin
+    alu_p: process  (command, state, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, mul_result, current_flags) 
+        variable  mul_result_for_LDR : std_logic_vector(63 downto 0);
+    begin
+    
         case (command) is
             -------------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
             when ADDS_imm3 =>  
@@ -396,14 +454,57 @@ begin
                 -- carry out = carry in
                 alu_temp(31 downto 0) <= unsigned (operand_A) and unsigned(operand_B); 
                 alu_temp(32) <= to_std_logic(current_flags.C);                                    
+            -------------------------------------------------------------------------------------- --  RORS <Rdn>,<Rm>
+            when RORS =>             
+                -- shift_n = UInt(R[m]<7:0>);
+                -- (result, carry) = Shift_C(R[n], SRType_ROR, shift_n, APSR.C);
+                -- R[d] = result;
+                alu_temp (31 downto 0) <= shift_right (unsigned (operand_A),  to_integer (unsigned (operand_B (4 downto 0)))); 
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if ( unsigned( operand_B (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                else
+                    alu_temp (32) <= alu_temp (31);                                    
+                end if;    
+            -------------------------------------------------------------------------------------- --   LDR <Rt>, [<Rn>{,#<imm5>}]
+            when LDR_imm5 =>             
+                -- offset_addr = if add then (R[n] + imm32) else (R[n] - imm32);
+                -- address = if index then offset_addr else R[n];
+                -- R[t] = MemU[address,4];
+                alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used
+                data_mem_addr <= unsigned (operand_B) + unsigned (imm8_z_ext);
+            -------------------------------------------------------------------------------------- --   LDR <Rt>,<label>
+            when LDR_imm8 =>             
+                -- offset_addr = if add then (R[n] + imm32) else (R[n] - imm32);
+                -- address = if index then offset_addr else R[n];
+                -- R[t] = MemU[address,4];
+                alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used
+                -- operand B holds the value of PC, the literal address follows this calculation:
+                -- imm8_z_ext holds the value of literal
+                -- aligned_PC = PC & 0xFFFF_FFFC
+                -- address = aligned_PC + (literal * 4) + 4
+                mul_result_for_LDR := std_logic_vector (unsigned (imm8_z_ext) * 4);
+                -- Check to see is LDR resides in odd memory location or even.
+                -- For odd case we don;t need to add 4
+                -- For even case plus 4 is needed.
+                data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
+--                if (state = s_INSTA_MEM_ACCESS) then
+--                    data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
+--                elsif (state = s_INSTB_MEM_ACCESS) then
+--                    data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0));
+--                else
+--                    data_mem_addr <= (others => '0');
+--                    report "Executor: In (LDR_imm8) an unknown core state encountered." severity error;  
+--                end if;
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when others  =>
-                alu_temp <= (others => '0');
+                alu_temp <= (others => '0');    
         end case;       
      end process;
 
      alu_result <= std_logic_vector(alu_temp(31 downto 0));
      result <= result_final;
+     data_mem_addr_out <= std_logic_vector(data_mem_addr);
      
     -- If core is at state s_EXEC_INSTA then the current memory address of the currect instruction is PC.
     --  but if the core is at state s_EXEC_INSTB then current memory address of the currect instruction is PC - 2

@@ -9,13 +9,13 @@
       "validated": "true"
     },
     "design_tree": {
-      "BRAM_32KB_0": "",
+      "BRAM_32KB_CODE": "",
       "clk_wiz_0": "",
       "constant_1": "",
       "constant_0": "",
       "constant_0_16bit": "",
-      "xlslice_0": "",
-      "xlslice_1": "",
+      "BRAM_32k_DATA": "",
+      "bus_matrix_0": "",
       "cortex_m0_core_0": ""
     },
     "interface_ports": {
@@ -69,7 +69,7 @@
       }
     },
     "components": {
-      "BRAM_32KB_0": {
+      "BRAM_32KB_CODE": {
         "vlnv": "xilinx.com:ip:blk_mem_gen:8.4",
         "xci_name": "system_blk_mem_gen_0_2",
         "parameters": {
@@ -196,36 +196,131 @@
           }
         }
       },
-      "xlslice_0": {
-        "vlnv": "xilinx.com:ip:xlslice:1.0",
-        "xci_name": "system_xlslice_0_0",
+      "BRAM_32k_DATA": {
+        "vlnv": "xilinx.com:ip:blk_mem_gen:8.4",
+        "xci_name": "system_blk_mem_gen_0_4",
         "parameters": {
-          "DIN_FROM": {
-            "value": "1"
+          "Enable_32bit_Address": {
+            "value": "false"
           },
-          "DIN_TO": {
-            "value": "1"
+          "Fill_Remaining_Memory_Locations": {
+            "value": "true"
           },
-          "DIN_WIDTH": {
-            "value": "2"
+          "Register_PortA_Output_of_Memory_Primitives": {
+            "value": "false"
           },
-          "DOUT_WIDTH": {
-            "value": "1"
+          "Use_Byte_Write_Enable": {
+            "value": "false"
+          },
+          "Use_RSTA_Pin": {
+            "value": "false"
+          },
+          "Write_Depth_A": {
+            "value": "32768"
+          },
+          "use_bram_block": {
+            "value": "Stand_Alone"
           }
         }
       },
-      "xlslice_1": {
-        "vlnv": "xilinx.com:ip:xlslice:1.0",
-        "xci_name": "system_xlslice_1_0",
-        "parameters": {
-          "DIN_FROM": {
-            "value": "16"
+      "bus_matrix_0": {
+        "vlnv": "xilinx.com:module_ref:bus_matrix:1.0",
+        "xci_name": "system_bus_matrix_0_0",
+        "reference_info": {
+          "ref_type": "hdl",
+          "ref_name": "bus_matrix",
+          "boundary_crc": "0x0"
+        },
+        "ports": {
+          "clk": {
+            "type": "clk",
+            "direction": "I",
+            "parameters": {
+              "ASSOCIATED_RESET": {
+                "value": "reset",
+                "value_src": "constant"
+              },
+              "CLK_DOMAIN": {
+                "value": "system_clk_wiz_0_1_CLK",
+                "value_src": "default_prop"
+              },
+              "FREQ_HZ": {
+                "value": "50000000",
+                "value_src": "ip_prop"
+              },
+              "PHASE": {
+                "value": "0.0",
+                "value_src": "ip_prop"
+              }
+            }
           },
-          "DIN_TO": {
-            "value": "2"
+          "reset": {
+            "type": "rst",
+            "direction": "I"
           },
-          "DOUT_WIDTH": {
-            "value": "15"
+          "cortex_m0_HADDR": {
+            "direction": "I",
+            "left": "31",
+            "right": "0"
+          },
+          "cortex_m0_HWDATA": {
+            "direction": "I",
+            "left": "31",
+            "right": "0"
+          },
+          "cortex_m0_HWRITE": {
+            "direction": "I"
+          },
+          "cortex_m0_HRDATA": {
+            "direction": "O",
+            "left": "31",
+            "right": "0"
+          },
+          "code_bram_DOUTA": {
+            "direction": "I",
+            "left": "31",
+            "right": "0"
+          },
+          "code_bram_ADDRA": {
+            "direction": "O",
+            "left": "14",
+            "right": "0"
+          },
+          "code_bram_DINA": {
+            "direction": "O",
+            "left": "31",
+            "right": "0"
+          },
+          "code_bram_ENA": {
+            "direction": "O"
+          },
+          "code_bram_WEA": {
+            "direction": "O",
+            "left": "0",
+            "right": "0"
+          },
+          "data_bram_DOUTA": {
+            "direction": "I",
+            "left": "31",
+            "right": "0"
+          },
+          "data_bram_ADDRA": {
+            "direction": "O",
+            "left": "14",
+            "right": "0"
+          },
+          "data_bram_DINA": {
+            "direction": "O",
+            "left": "31",
+            "right": "0"
+          },
+          "data_bram_ENA": {
+            "direction": "O"
+          },
+          "data_bram_WEA": {
+            "direction": "O",
+            "left": "0",
+            "right": "0"
           }
         }
       },
@@ -371,50 +466,10 @@
       "clk_wiz_0_CLK": {
         "ports": [
           "clk_wiz_0/CLK",
-          "BRAM_32KB_0/clka",
+          "BRAM_32KB_CODE/clka",
+          "BRAM_32k_DATA/clka",
+          "bus_matrix_0/clk",
           "cortex_m0_core_0/HCLK"
-        ]
-      },
-      "cortex_m0_core_0_HTRANS": {
-        "ports": [
-          "cortex_m0_core_0/HTRANS",
-          "xlslice_0/Din"
-        ]
-      },
-      "xlslice_0_Dout": {
-        "ports": [
-          "xlslice_0/Dout",
-          "BRAM_32KB_0/ena"
-        ]
-      },
-      "cortex_m0_core_0_HADDR": {
-        "ports": [
-          "cortex_m0_core_0/HADDR",
-          "xlslice_1/Din"
-        ]
-      },
-      "xlslice_1_Dout": {
-        "ports": [
-          "xlslice_1/Dout",
-          "BRAM_32KB_0/addra"
-        ]
-      },
-      "cortex_m0_core_0_HWDATA": {
-        "ports": [
-          "cortex_m0_core_0/HWDATA",
-          "BRAM_32KB_0/dina"
-        ]
-      },
-      "BRAM_32KB_0_douta": {
-        "ports": [
-          "BRAM_32KB_0/douta",
-          "cortex_m0_core_0/HRDATA"
-        ]
-      },
-      "cortex_m0_core_0_HWRITE": {
-        "ports": [
-          "cortex_m0_core_0/HWRITE",
-          "BRAM_32KB_0/wea"
         ]
       },
       "xlconstant_0_dout": {
@@ -458,7 +513,92 @@
       "clk_wiz_0_locked": {
         "ports": [
           "clk_wiz_0/locked",
+          "bus_matrix_0/reset",
           "cortex_m0_core_0/HRESETn"
+        ]
+      },
+      "cortex_m0_core_0_HWDATA": {
+        "ports": [
+          "cortex_m0_core_0/HWDATA",
+          "bus_matrix_0/cortex_m0_HWDATA"
+        ]
+      },
+      "cortex_m0_core_0_HWRITE": {
+        "ports": [
+          "cortex_m0_core_0/HWRITE",
+          "bus_matrix_0/cortex_m0_HWRITE"
+        ]
+      },
+      "bus_matrix_0_cortex_m0_HRDATA": {
+        "ports": [
+          "bus_matrix_0/cortex_m0_HRDATA",
+          "cortex_m0_core_0/HRDATA"
+        ]
+      },
+      "BRAM_32KB_CODE_douta": {
+        "ports": [
+          "BRAM_32KB_CODE/douta",
+          "bus_matrix_0/code_bram_DOUTA"
+        ]
+      },
+      "BRAM_32k_DATA_douta": {
+        "ports": [
+          "BRAM_32k_DATA/douta",
+          "bus_matrix_0/data_bram_DOUTA"
+        ]
+      },
+      "bus_matrix_0_code_bram_ENA": {
+        "ports": [
+          "bus_matrix_0/code_bram_ENA",
+          "BRAM_32KB_CODE/ena"
+        ]
+      },
+      "bus_matrix_0_code_bram_ADDRA": {
+        "ports": [
+          "bus_matrix_0/code_bram_ADDRA",
+          "BRAM_32KB_CODE/addra"
+        ]
+      },
+      "bus_matrix_0_code_bram_DINA": {
+        "ports": [
+          "bus_matrix_0/code_bram_DINA",
+          "BRAM_32KB_CODE/dina"
+        ]
+      },
+      "bus_matrix_0_code_bram_WEA": {
+        "ports": [
+          "bus_matrix_0/code_bram_WEA",
+          "BRAM_32KB_CODE/wea"
+        ]
+      },
+      "bus_matrix_0_data_bram_ADDRA": {
+        "ports": [
+          "bus_matrix_0/data_bram_ADDRA",
+          "BRAM_32k_DATA/addra"
+        ]
+      },
+      "bus_matrix_0_data_bram_DINA": {
+        "ports": [
+          "bus_matrix_0/data_bram_DINA",
+          "BRAM_32k_DATA/dina"
+        ]
+      },
+      "bus_matrix_0_data_bram_ENA": {
+        "ports": [
+          "bus_matrix_0/data_bram_ENA",
+          "BRAM_32k_DATA/ena"
+        ]
+      },
+      "bus_matrix_0_data_bram_WEA": {
+        "ports": [
+          "bus_matrix_0/data_bram_WEA",
+          "BRAM_32k_DATA/wea"
+        ]
+      },
+      "cortex_m0_core_0_HADDR": {
+        "ports": [
+          "cortex_m0_core_0/HADDR",
+          "bus_matrix_0/cortex_m0_HADDR"
         ]
       }
     }

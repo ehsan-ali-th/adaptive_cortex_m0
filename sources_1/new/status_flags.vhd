@@ -39,7 +39,7 @@ entity status_flags is
         clk : in std_logic;
         reset : in std_logic;
         result : in std_logic_vector(31 downto 0);
-        alu_temp_32 : in std_logic;
+        C_in : in std_logic;
         overflow_status : in std_logic_vector(2 downto 0);      -- Concatenation of 3 bits: operand_A(31) & imm8_z_ext(31) & alu_result(31);
         cmd : in executor_cmds_t;
         set_flags : in boolean; 
@@ -59,7 +59,7 @@ architecture Behavioral of status_flags is
 
 begin
 
-    cmd_p: process(reset, cmd, result, set_flags, overflow_status, alu_temp_32) begin
+    cmd_p: process(reset, cmd, result, set_flags, overflow_status, C) begin
         if reset = '0' then 
             if set_flags then
                 -- how to calculate overflow:
@@ -91,6 +91,15 @@ begin
                     ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,<Rm>       
                     ------------------------------------------------------------ -- ADDS <Rdn>,#<imm8>   
                     ------------------------------------------------------------ -- ADCS <Rdn>,<Rm>  
+                    when ADDS_imm3 | ADDS | ADDS_imm8 | ADCS =>    
+                        -- APSR.N = result<31>;
+                        -- APSR.Z = IsZeroBit(result);
+                        -- APSR.C = carry;
+                        -- APSR.V = overflow;
+                        N <= to_bit (result(31)); 
+                        if (to_integer(unsigned(result)) = 0) then Z <= '1'; else Z <= '0'; end if;
+                        C <= to_bit(C_in);
+                        if ((overflow_status = B"001") or (overflow_status = B"110")) then V <= '1'; else V <= '0'; end if;
                     ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,<Rm>
                     ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,#<imm3>  
                     ------------------------------------------------------------ -- SBCS <Rdn>,<Rm>   
@@ -98,8 +107,7 @@ begin
                     ------------------------------------------------------------ -- CMP <Rn>,<Rm>
                     ------------------------------------------------------------ -- CMN <Rn>,<Rm>    
                     ------------------------------------------------------------ -- CMP <Rn>,#<imm8>     
-                    when ADDS_imm3 | ADDS | ADDS_imm8 | ADCS | 
-                          SUBS | SUBS_imm8 | SBCS | RSBS |
+                    when SUBS | SUBS_imm8 | SBCS | RSBS |
                           CMP | CMN | CMP_imm8 =>    
                         -- APSR.N = result<31>;
                         -- APSR.Z = IsZeroBit(result);
@@ -107,8 +115,8 @@ begin
                         -- APSR.V = overflow;
                         N <= to_bit (result(31)); 
                         if (to_integer(unsigned(result)) = 0) then Z <= '1'; else Z <= '0'; end if;
-                        C <= to_bit(alu_temp_32);
-                        if ((overflow_status = B"001") or (overflow_status = B"110")) then V <= '1'; else V <= '0'; end if;
+                        C <= to_bit(C_in);
+                        if ((overflow_status = B"011") or (overflow_status = B"100")) then V <= '1'; else V <= '0'; end if;    
                     ------------------------------------------------------------ -- MULS <Rdm>,<Rn>,<Rdm>     
                     when MULS =>
                         -- APSR.N = result<31>;
@@ -123,6 +131,7 @@ begin
                     ------------------------------------------------------------ -- BICS <Rdn>,<Rm>    
                     ------------------------------------------------------------ -- MVNS <Rd>,<Rm>      
                     ------------------------------------------------------------ -- TST <Rn>,<Rm>   
+                    ------------------------------------------------------------ -- RORS <Rdn>,<Rm> 
                     when ANDS | EORS | ORRS | BICS | MVNS | TST  =>
                         -- APSR.N = result<31>;
                         -- APSR.Z = IsZeroBit(result);
@@ -130,7 +139,7 @@ begin
                         -- // APSR.V unchanged    
                         N <= to_bit (result(31)); 
                         if (to_integer(unsigned(result)) = 0) then Z <= '1'; else Z <= '0'; end if;
-                        C <= to_bit(alu_temp_32);
+                        C <= to_bit(C_in);
                     when others =>  
                         null;
                  end case;
