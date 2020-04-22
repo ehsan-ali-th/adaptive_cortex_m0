@@ -40,7 +40,9 @@ package helper_funcs is
 
     type core_state_t is (
         s_RESET, 
+       -- s_START_DELAY_CYCLE,
         s_RUN,
+        s_FETCH_32_ALIGNED,
         --s_EXEC_INSTA_START, 
         s_EXEC_INSTA, 
         s_EXEC_INSTB, 
@@ -67,6 +69,7 @@ package helper_funcs is
         ANDS, EORS, ORRS, BICS, MVNS, TST,
         RORS,
         LDR_imm5,LDR_imm8,
+        NOP,
         NOT_DEF
         );  
         

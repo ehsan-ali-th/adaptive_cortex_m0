@@ -38,14 +38,14 @@ entity executor is
     Port (
          clk : in std_logic;
          reset : in std_logic;
-         run : in std_logic;
          operand_A : in std_logic_vector(31 downto 0);	
          operand_B : in std_logic_vector(31 downto 0);	
          command: in executor_cmds_t;	
          imm8_z_ext : in  std_logic_vector(31 downto 0);
          destination_is_PC : in std_logic;
-         state: in core_state_t;
          current_flags : in flag_t;
+         access_mem : in boolean;
+         enable_execute: in std_logic;
          
          cmd_out: out executor_cmds_t;
          set_flags : out boolean;
@@ -81,6 +81,7 @@ architecture Behavioral of executor is
     signal current_instruction_mem_location :  std_logic_vector (31 downto 0);
     signal mul_result:  std_logic_vector (31 downto 0);
     signal data_mem_addr :  unsigned (31 downto 0);
+    
  
 begin
 
@@ -91,19 +92,16 @@ begin
         );
         
     PC_updated <= destination_is_PC;
+   
         
-    gp_data_in_p: process  (run, imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
-        if (run = '1') then 
-            case mux_ctrl is
-                when B"00" =>   result_final <= imm8_z_ext;
-                when B"10" =>   result_final <= operand_A;
-                when B"01" =>   result_final <= operand_B;
-                when B"11" =>   result_final <= alu_result;
-                when others =>  result_final <= (others => '0');
-            end case;
-        else 
-            result_final <= (others => '0');
-        end if;    
+    gp_data_in_p: process  (imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
+        case mux_ctrl is
+            when B"00" =>   result_final <= imm8_z_ext;
+            when B"10" =>   result_final <= operand_A;
+            when B"01" =>   result_final <= operand_B;
+            when B"11" =>   result_final <= alu_result;
+            when others =>  result_final <= (others => '0');
+        end case;
     end process;
     
     cmd_out <= command;
@@ -111,20 +109,24 @@ begin
     alu_temp_32 <= alu_temp(32);
     
     -- This process  flushes the pipeline if PC gets updated.
-    WE_p: process  (WE_val, state) begin
-        if ( --state = s_PC_UPDATED_INVALID or 
-            state = s_EXEC_INSTA_INVALID or 
-            state = s_EXEC_INSTB_INVALID or 
-            state = s_PC_UNALIGNED 
-           -- or state = s_INSTA_MEM_ACCESS or 
-            --state = s_INSTB_MEM_ACCESS
-            ) then
-            WE <= '0';
---        elsif (state = s_INSTA_AFTER_MEM_ACCESS or state = s_INSTB_AFTER_MEM_ACCESS) then
+    WE_p: process  (WE_val, enable_execute) begin
+--        if ( --state = s_PC_UPDATED_INVALID or 
+--            state = s_EXEC_INSTA_INVALID or 
+--            state = s_EXEC_INSTB_INVALID or 
+--            state = s_PC_UNALIGNED 
+--           -- or state = s_INSTA_MEM_ACCESS or 
+--            --state = s_INSTB_MEM_ACCESS
+--            ) then
+--            WE <= '0';
+--        elsif ((state = s_EXEC_INSTA or state = s_EXEC_INSTB) and access_mem = true) then
 --            WE <= '1';    
-        else    
+--        else    
+        if (enable_execute = '1') then
             WE <= WE_val;
+        else
+            WE <= '0';
         end if;    
+--        end if;    
     end process;
     
     execution_p: process  (command, destination_is_PC, operand_A(31), operand_B(31),  alu_result(31), imm8_z_ext(31)) begin
@@ -329,7 +331,13 @@ begin
                 set_flags <= false;
                 update_PC <= '0'; 
                 mem_access <= true;
-            ------------------------------------------------------------ -- All unefined instructions        
+            when NOP =>
+                WE_val <= '0';              
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                update_PC <= '0'; 
+                mem_access <= false;    
+            ------------------------------------------------------------ -- All undefined instructions        
             when others  => 
                 WE_val <= '0'; 
                 mux_ctrl <= B"00";
@@ -340,7 +348,7 @@ begin
        end case;  
      end process;
      
-    alu_p: process  (command, state, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, mul_result, current_flags) 
+    alu_p: process  (command, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, mul_result, current_flags) 
         variable  mul_result_for_LDR : std_logic_vector(63 downto 0);
     begin
     
@@ -497,6 +505,8 @@ begin
 --                    report "Executor: In (LDR_imm8) an unknown core state encountered." severity error;  
 --                end if;
             -------------------------------------------------------------------------------------- -- others indefined instructions
+            when NOP =>
+                alu_temp <= (others => '0');   
             when others  =>
                 alu_temp <= (others => '0');    
         end case;       
@@ -509,13 +519,13 @@ begin
     -- If core is at state s_EXEC_INSTA then the current memory address of the currect instruction is PC.
     --  but if the core is at state s_EXEC_INSTB then current memory address of the currect instruction is PC - 2
     -- The to PC instrution adds to current memory location which must be calculates based on the observations stated above.
-    current_instruction_mem_location_p: process (state, operand_A) begin
-        if (state = s_EXEC_INSTA) then
-            current_instruction_mem_location <= operand_A;    -- OperanA will carry the PC if update_PC signal is activated
-        else
-            current_instruction_mem_location <= STD_LOGIC_VECTOR (unsigned (operand_A) + 2);
-        end if;
-    end process;
+--    current_instruction_mem_location_p: process (state, operand_A) begin
+--        if (state = s_EXEC_INSTA) then
+--            current_instruction_mem_location <= operand_A;    -- OperanA will carry the PC if update_PC signal is activated
+--        else
+--            current_instruction_mem_location <= STD_LOGIC_VECTOR (unsigned (operand_A) + 2);
+--        end if;
+--    end process;
     
     
  

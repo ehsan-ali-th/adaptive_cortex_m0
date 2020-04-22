@@ -93,17 +93,14 @@ architecture Behavioral of cortex_m0_core is
     
     component decoder is
     Port ( 
-        run : in std_logic; 
         instruction : in STD_LOGIC_VECTOR (15 downto 0);
-        state: in core_state_t;
+        instruction_size : out boolean;
         destination_is_PC : out std_logic;
-        thumb : out std_logic;                               -- indicates wether the decoded instruction is 16-bit thumb or 32-bit  
         gp_WR_addr : out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
         execution_cmd: out executor_cmds_t;
-        --use_PC : out boolean
         access_mem: out boolean
     );
     end component;
@@ -112,14 +109,14 @@ architecture Behavioral of cortex_m0_core is
         Port (
              clk : in std_logic;
              reset : in std_logic;
-             run : in std_logic;
              operand_A : in std_logic_vector(31 downto 0);	
              operand_B : in std_logic_vector(31 downto 0);	
              command: in executor_cmds_t;	
              imm8_z_ext : in  std_logic_vector(31 downto 0);
              destination_is_PC : in std_logic;
-             state: in core_state_t;
              current_flags : in flag_t;
+             access_mem : in boolean;
+             enable_execute: in std_logic;
              cmd_out: out executor_cmds_t;
              set_flags : out boolean;
              PC_updated: out std_logic;
@@ -136,15 +133,11 @@ architecture Behavioral of cortex_m0_core is
         Port (
             clk : in std_logic;
             reset : in std_logic;
-            run : in std_logic;
-            PC_updated : in std_logic;
-            access_mem : in boolean;
-            PC_2bit_LSB :  std_logic_vector(1 downto 0);
-           -- use_PC_value: in boolean;
-            instr_ptr: out std_logic;
-            state : out core_state_t;
-            next_state : out core_state_t;
-            m0_previous_state : out core_state_t
+            instruction_size : in boolean;      -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
+            enable_decode : out std_logic;
+            enable_execute: out std_logic;
+            HADDR : out std_logic_vector(31 downto 0);
+            PC : out std_logic_vector(31 downto 0)
         );
     end component;
     
@@ -180,26 +173,29 @@ architecture Behavioral of cortex_m0_core is
     ATTRIBUTE X_INTERFACE_INFO of HRESETn: SIGNAL is "xilinx.com:signal:reset:1.0 HRESETn RST";
     ATTRIBUTE X_INTERFACE_PARAMETER of HRESETn: SIGNAL is "POLARITY ACTIVE_HIGH";
 			
-	-- signals
+	-- M0 Core signals 
+    signal PC: std_logic_vector (31 downto 0);
+	signal instruction_size : boolean;
+	signal current_instruction: std_logic_vector (15 downto 0);
+	signal enable_decode : std_logic;
+	
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
-    signal PC:  std_logic_vector (31 downto 0);
-    signal PC_VALUE:  std_logic_vector (31 downto 0);
-    signal PC_plus_4:  std_logic_vector (31 downto 0);
+--    signal PC_VALUE:  std_logic_vector (31 downto 0);
+--    signal PC_plus_2:  std_logic_vector (31 downto 0);
+--    signal PC_aligned:  std_logic_vector (31 downto 0);
     signal internal_reset: std_logic := '1';
-    signal run: std_logic := '0'; 
-    signal load_current_inst_permitted: std_logic := '0'; 
     signal thumb: std_logic := '0';
     signal valid: std_logic := '0';
     signal decode_phase : std_logic;     
     signal decode_phase_value : std_logic;     
-    signal PC_decode:  std_logic_vector (31 downto 0);
+--    signal PC_decode:  std_logic_vector (31 downto 0);
     signal PC_execute:  std_logic_vector (31 downto 0);
-    signal fetched_32_bit_instruction:  std_logic_vector (31 downto 0) := (others => '0');
+--    signal fetched_32_bit_instruction:  std_logic_vector (31 downto 0) := (others => '0');
     signal instA_access_mem : boolean;
     signal instB_access_mem : boolean;
     
-	-- Registers
+	-- Registers after decoder
 	signal gp_WR_addr : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_WR_addr_value : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_addrA : std_logic_vector(3 downto 0) := (others => '0');	
@@ -210,6 +206,8 @@ architecture Behavioral of cortex_m0_core is
 	signal gp_ram_dataB : std_logic_vector(31 downto 0);	
 	signal gp_addrA_executor : std_logic_vector(31 downto 0);	
 	signal gp_data_in : std_logic_vector(31 downto 0);	
+    signal enable_execute : std_logic;
+	signal enable_execute_value : std_logic;
     
     -- decoder signals
     signal imm8:  std_logic_vector (7 downto 0);
@@ -218,6 +216,8 @@ architecture Behavioral of cortex_m0_core is
 --	signal use_PC_value:  boolean;
     signal access_mem:  boolean;
     signal access_mem_value:  boolean;
+   
+
 
 	
 	-- executor signals
@@ -241,6 +241,7 @@ architecture Behavioral of cortex_m0_core is
     signal m0_previous_state : core_state_t;
     signal flags       :  flag_t;
     signal instr_ptr : std_logic;
+    signal HADDR_out :  std_logic_vector (31 downto 0);
     
     -- pipeline_invalidator signals
 	signal invalidate_pipeline : boolean;
@@ -250,19 +251,23 @@ architecture Behavioral of cortex_m0_core is
     -- Little endian:
     -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
     -- [31 30 29 28 - 27 26 25 24] [23 22 21 20 - 19 18 17 16] [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
+    alias fetched_32_bit_instruction : std_logic_vector(31 downto 0) is HRDATA (31 downto 0);
+    
+    
+    
     alias inst_A_1st_half : std_logic_vector(7 downto 0) is HRDATA (31 downto 24);
     alias inst_A_2nd_half : std_logic_vector(7 downto 0) is HRDATA (23 downto 16);
     alias inst_B_1st_half : std_logic_vector(7 downto 0) is HRDATA (15 downto 8);
     alias inst_B_2nd_half : std_logic_vector(7 downto 0) is HRDATA (7 downto 0);
     
-    alias f32_inst_A_1st_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (31 downto 24);
-    alias f32_inst_A_2nd_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (23 downto 16);
-    alias f32_inst_B_1st_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (15 downto 8);
-    alias f32_inst_B_2nd_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (7 downto 0);
+--    alias f32_inst_A_1st_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (31 downto 24);
+--    alias f32_inst_A_2nd_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (23 downto 16);
+--    alias f32_inst_B_1st_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (15 downto 8);
+--    alias f32_inst_B_2nd_half : std_logic_vector(7 downto 0) is fetched_32_bit_instruction (7 downto 0);
     
     
 
-    signal current_instruction: std_logic_vector (15 downto 0);
+  
 	
 	-- Simulation signals  
 	--synthesis translate off
@@ -285,11 +290,9 @@ begin
     );
     
     m0_decoder: decoder port map ( 
-        run => run,
         instruction => current_instruction,
-        state => m0_core_state,
+        instruction_size => instruction_size,
         destination_is_PC => destination_is_PC_value,
-        thumb => thumb,
         gp_WR_addr => gp_WR_addr_value,
         gp_addrA => gp_addrA_value,
         gp_addrB => gp_addrB_value,
@@ -301,14 +304,14 @@ begin
      m0_executor: executor port map (
              clk => HCLK,
              reset => internal_reset,
-             run => run,
              operand_A => gp_addrA_executor,	
              operand_B => executor_opernd_B,	
              command => command, 	
              imm8_z_ext => imm8_z_ext,
              destination_is_PC => destination_is_PC,
-             state => m0_core_state,
              current_flags => flags,
+             access_mem => access_mem,
+             enable_execute => enable_execute, 
              cmd_out => cmd_out,
              set_flags => set_flags,
              PC_updated => PC_updated,
@@ -323,15 +326,11 @@ begin
       m0_core_state_m: core_state port map (
             clk => HCLK,
             reset => internal_reset,
-            run => run,
-            PC_updated => PC_updated,
-            access_mem => access_mem_value,
-            PC_2bit_LSB => PC(1 downto 0),
-           -- use_PC_value => use_PC_value,
-            instr_ptr => instr_ptr,
-            state => m0_core_state,
-            next_state => m0_next_state,
-            m0_previous_state => m0_previous_state 
+            instruction_size => instruction_size,
+            enable_decode => enable_decode,
+            enable_execute => enable_execute_value,
+            HADDR => HADDR_out,
+            PC => PC
         ); 
         
      m0_core_flags: status_flags port map (
@@ -352,48 +351,30 @@ begin
         invalidate_pipeline => invalidate_pipeline
     );
     
-     internal_reset_p: process (HCLK) begin
+    internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
             internal_reset <= not HRESETn;
-            load_current_inst_permitted <= run; 
+        end if;
+    end process;
+
+    current_instruction_p: process (PC(1), fetched_32_bit_instruction) begin
+        if (PC(1) = '0') then
+            current_instruction <= fetched_32_bit_instruction(31 downto 16);    
+        else    
+            current_instruction <= fetched_32_bit_instruction(15 downto 0);    
         end if;
     end process;
 
 
-     run_p: process (HCLK) begin
-        if (rising_edge(HCLK)) then    
-            run <= not internal_reset;
-        end if;    
-     end process;       
+
     
-     -- Drives the PC   
-    drive_pc_p: process (HCLK) begin    
-        if (rising_edge(HCLK)) then
---            if (invalidate_pipeline = true) then 
---                PC <= PC;  
---                PC_decode <= PC_decode;
---                PC_execute <= PC_execute;
---            else
-           -- if (m0_core_state = s_EXEC_INSTB or m0_core_state = s_RESET) then 
-                PC <= PC_value;  
-           -- else
-             --   PC <= PC;
-            --end if;        
-            PC_decode <= PC;
-            PC_execute <= PC_decode;
-           -- end if;    
-         end if;
-    end process;
     
-    PC_plus_4 <=  STD_LOGIC_VECTOR (unsigned (PC) + 4);
+    
+--    PC_plus_2 <=  STD_LOGIC_VECTOR (unsigned (PC) + 2);
     
     decode_phase_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
-            if (run = '1') then
                 decode_phase <= decode_phase_value;
-            else
-                decode_phase <= '0';
-            end if;    
         end if;
     end process;
     
@@ -409,141 +390,118 @@ begin
                 decode_phase_value <= not decode_phase;
     end process;
     
-    pc_value_p: process  (m0_core_state, internal_reset, run, PC_updated, result, PC_plus_4, 
-                            access_mem_value, PC, instA_access_mem, instB_access_mem) begin
-            case (m0_core_state) is
-                when s_RESET => PC_VALUE <= x"0000_0000";    -- zero    
-                when s_RUN =>   PC_VALUE <= x"0000_0000";
-                when s_EXEC_INSTA =>
-                    if (PC_updated = '1') then
-                        PC_VALUE <= result;         -- Result
-                    else
-                        if (access_mem_value = true) then
-                            PC_VALUE <= PC; 
-                        else
-                            if (instB_access_mem = true) then
-                                PC_VALUE <= PC;
-                            else
-                                PC_VALUE <= PC_plus_4;      -- PC + 4
-                            end if;      
-                        end if;    
-                    end if;
-                when s_EXEC_INSTB => 
-                    if (PC_updated = '1') then
-                        PC_VALUE <= result;         -- Result
-                    else
-                        if (access_mem_value = true) then
-                            if (instA_access_mem = true) then
-                                PC_VALUE <= PC_plus_4;      -- PC + 4
-                            else
-                                if (instB_access_mem = true) then
-                                    PC_VALUE <= PC_plus_4;      -- PC + 4
-                                else
-                                    PC_VALUE <= PC;
-                                end if;    
-                            end if;      
-                        else
-                           PC_VALUE <= PC;  
-                        end if;
---                        if (m0_previous_state = s_EXEC_INSTA) then
-                        
---                        else
---                            PC_VALUE <= PC_plus_4;      -- PC + 4          
---                        end if;     
-                    end if;
-                when s_PC_UPDATED_INVALID =>        --PC_VALUE <= PC_VALUE;       -- No change
-                when s_EXEC_INSTA_INVALID =>        --PC_VALUE <= PC_VALUE;       -- No change
-                when s_EXEC_INSTB_INVALID =>        PC_VALUE <= PC_plus_4;      -- PC + 4
-                when s_PC_UNALIGNED =>              --PC_VALUE <= PC_VALUE;       -- No change
-                when s_REFETCH_INSTA =>             
-                        if (instB_access_mem = true) then
-                            PC_VALUE <= PC;
-                        else
-                            PC_VALUE <= PC_plus_4;      -- PC + 4  
-                        end if;     
-                when s_REFETCH_INSTB =>             --PC_VALUE <= PC_VALUE;       -- No change
+--    pc_value_p: process  (m0_core_state, internal_reset, PC_updated, result, PC_plus_2,
+--                            access_mem_value, PC, instA_access_mem, instB_access_mem) begin
+--            case (m0_core_state) is
+--                when s_RESET => PC_VALUE <= x"0000_0000";    -- zero    
+--                when s_RUN =>   PC_VALUE <= x"0000_0000";
+--                when s_FETCH_32_ALIGNED =>   PC_VALUE <= x"0000_0000";
+----                when s_EXEC_INSTA =>
+----                    if (PC_updated = '1') then
+----                        PC_VALUE <= result;         -- Result
+----                    else
+----                        if (access_mem_value = true) then
+----                            PC_VALUE <= PC; 
+----                        else
+----                            if (instB_access_mem = true) then
+----                                PC_VALUE <= PC;
+----                            else
+----                                PC_VALUE <= PC_plus_4;      -- PC + 4
+----                            end if;      
+----                        end if;    
+----                    end if;
+----                when s_EXEC_INSTB => 
+----                    if (PC_updated = '1') then
+----                        PC_VALUE <= result;         -- Result
+----                    else
+----                        if (access_mem_value = true) then
+----                            if (instA_access_mem = true) then
+----                                PC_VALUE <= PC_plus_4;      -- PC + 4
+----                            else
+----                                if (instB_access_mem = true) then
+----                                    PC_VALUE <= PC_plus_4;      -- PC + 4
+----                                else
+----                                    PC_VALUE <= PC;
+----                                end if;    
+----                            end if;      
+----                        else
+----                           PC_VALUE <= PC;  
+----                        end if;
+
+----                    end if;
+----                when s_PC_UPDATED_INVALID =>        --PC_VALUE <= PC_VALUE;       -- No change
+----                when s_EXEC_INSTA_INVALID =>        --PC_VALUE <= PC_VALUE;       -- No change
+----                when s_EXEC_INSTB_INVALID =>        PC_VALUE <= PC_plus_4;      -- PC + 4
+----                when s_PC_UNALIGNED =>              --PC_VALUE <= PC_VALUE;       -- No change
+----                when s_REFETCH_INSTA =>             
+----                        if (instB_access_mem = true) then
+----                            PC_VALUE <= PC;
+----                        else
+----                            PC_VALUE <= PC_plus_4;      -- PC + 4  
+----                        end if;     
+----                when s_REFETCH_INSTB =>             --PC_VALUE <= PC_VALUE;       -- No change
                 
---                when s_INSTA_MEM_ACCESS =>          PC_VALUE <= PC_VALUE;       -- No change
---                when s_INSTB_MEM_ACCESS =>         
---                      if (PC_updated = '1') then
---                        PC_VALUE <= result;         -- Result
---                    else
---                        PC_VALUE <= PC_plus_4;      -- PC + 4
---                    end if;
---                when s_INSTA_AFTER_MEM_ACCESS =>    PC_VALUE <= PC_VALUE;       -- No change
---                when s_INSTB_AFTER_MEM_ACCESS =>    PC_VALUE <= PC_VALUE;       -- No change
-                   
-----                when s_INSTA_AFTER_MEM_ACCESS =>    
-----                    if (PC_updated = '1') then
-----                        PC_VALUE <= result;         -- Result
-----                    else
-----                        PC_VALUE <= PC_VALUE;       -- No change  
-----                    end if;
-----                when s_INSTB_AFTER_MEM_ACCESS =>    
-----                    if (PC_updated = '1') then
-----                        PC_VALUE <= result;         -- Result
-----                    else
-----                        PC_VALUE <= PC_plus_4;      -- PC + 4
-----                    end if;
---                when s_MEM_ACCESS =>                PC_VALUE <= PC_VALUE;       -- No change
-                when others =>                      PC_VALUE <= x"0000_0000"; 
-            end case;
-     end process;
+
+--                when others =>                      PC_VALUE <= x"0000_0000"; 
+--            end case;
+--     end process;
     
 
-    Select_Inst_A_B_p: process  (internal_reset, run, m0_core_state, 
-                                 inst_A_2nd_half, inst_A_1st_half, inst_B_2nd_half, inst_B_1st_half,
-                                 f32_inst_A_2nd_half, f32_inst_A_1st_half, f32_inst_B_2nd_half, f32_inst_B_1st_half) begin
-        if (internal_reset = '0') then  
-            if (run = '1') then  
-                if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then 
---                    if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTB_MEM_ACCESS) then
---                        -- no change
---                    elsif (m0_core_state = s_INSTB_AFTER_MEM_ACCESS) then     
---                            current_instruction <= f32_inst_B_2nd_half & f32_inst_B_1st_half;        
---                    elsif (m0_core_state = s_INSTA_AFTER_MEM_ACCESS) then     
---                            current_instruction <= f32_inst_A_2nd_half & f32_inst_A_1st_half;        
+--    Select_Inst_A_B_p: process  (internal_reset, m0_core_state, 
+--                                 inst_A_2nd_half, inst_A_1st_half, inst_B_2nd_half, inst_B_1st_half,
+--                                 f32_inst_A_2nd_half, f32_inst_A_1st_half, f32_inst_B_2nd_half, f32_inst_B_1st_half, access_mem) begin
+--        if (internal_reset = '0') then  
+--                if (S_PROGRAM_MEMORY_ENDIAN = FALSE) then 
+--                    if (access_mem = true) then
+--                        if (m0_core_state = s_EXEC_INSTA) then 
+--                            current_instruction <= f32_inst_A_2nd_half & f32_inst_A_1st_half;
+--                        elsif (m0_core_state = s_EXEC_INSTB) then
+--                            current_instruction <= f32_inst_B_2nd_half & f32_inst_B_1st_half;
+----                        else
+----                            current_instruction <= (others => '0'); 
+--                        end if;    
 --                    else
-                        if (m0_core_state = s_EXEC_INSTA or 
-                            --m0_core_state = s_EXEC_INSTA_START or 
-                            m0_core_state = s_EXEC_INSTA_INVALID or
-                            m0_core_state = s_REFETCH_INSTA) then 
-                            current_instruction <= inst_A_2nd_half & inst_A_1st_half;
-                        elsif (m0_core_state = s_EXEC_INSTB or 
-                               m0_core_state = s_EXEC_INSTB_INVALID or
-                               m0_core_state = s_PC_UNALIGNED or 
-                               m0_core_state = s_REFETCH_INSTB) then
-                            current_instruction <= inst_B_2nd_half & inst_B_1st_half;
-                        else
-                            current_instruction <= (others => '0');    
-                        end if;
---                    end if;
-                else
---                    if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTB_MEM_ACCESS) then
---                        -- no change  
---                    elsif (m0_core_state = s_INSTB_AFTER_MEM_ACCESS) then     
---                           current_instruction <= f32_inst_B_1st_half & f32_inst_B_2nd_half;      
---                    elsif (m0_core_state = s_INSTA_AFTER_MEM_ACCESS) then     
---                           current_instruction <= f32_inst_A_1st_half & f32_inst_A_2nd_half;       
+--                        if (m0_core_state = s_EXEC_INSTA or 
+--                            --m0_core_state = s_EXEC_INSTA_START or 
+--                            m0_core_state = s_EXEC_INSTA_INVALID or
+--                            m0_core_state = s_REFETCH_INSTA) then 
+--                            current_instruction <= inst_A_2nd_half & inst_A_1st_half;
+--                        elsif (m0_core_state = s_EXEC_INSTB or 
+--                               m0_core_state = s_EXEC_INSTB_INVALID or
+--                               m0_core_state = s_PC_UNALIGNED or 
+--                               m0_core_state = s_REFETCH_INSTB) then
+--                            current_instruction <= inst_B_2nd_half & inst_B_1st_half;
+--                        else
+--                            current_instruction <= (others => '0');    
+--                        end if;
+--                   end if;
+--                else
+--                    if (access_mem = true) then
+--                        if (m0_core_state = s_EXEC_INSTA) then 
+--                            current_instruction <= f32_inst_A_1st_half & f32_inst_A_2nd_half;
+--                        elsif (m0_core_state = s_EXEC_INSTB) then
+--                            current_instruction <= f32_inst_B_1st_half & f32_inst_B_2nd_half;
+----                        else
+----                            current_instruction <= (others => '0'); 
+--                        end if;    
 --                    else     
-                        if (m0_core_state = s_EXEC_INSTA or 
-                            --m0_core_state = s_EXEC_INSTA_START or 
-                            m0_core_state = s_EXEC_INSTA_INVALID or
-                            m0_core_state = s_REFETCH_INSTA) then 
-                            current_instruction <= inst_A_1st_half & inst_A_2nd_half;
-                        elsif (m0_core_state = s_EXEC_INSTB or 
-                               m0_core_state = s_EXEC_INSTB_INVALID or
-                               m0_core_state = s_PC_UNALIGNED or 
-                               m0_core_state = s_REFETCH_INSTB) then
-                            current_instruction <= inst_B_1st_half & inst_B_2nd_half;
-                        else
-                            current_instruction <= (others => '0'); 
-                        end if;
+--                        if (m0_core_state = s_EXEC_INSTA or 
+--                            --m0_core_state = s_EXEC_INSTA_START or 
+--                            m0_core_state = s_EXEC_INSTA_INVALID or
+--                            m0_core_state = s_REFETCH_INSTA) then 
+--                            current_instruction <= inst_A_1st_half & inst_A_2nd_half;
+--                        elsif (m0_core_state = s_EXEC_INSTB or 
+--                               m0_core_state = s_EXEC_INSTB_INVALID or
+--                               m0_core_state = s_PC_UNALIGNED or 
+--                               m0_core_state = s_REFETCH_INSTB) then
+--                            current_instruction <= inst_B_1st_half & inst_B_2nd_half;
+--                        else
+--                            current_instruction <= (others => '0'); 
+--                        end if;
 --                    end if;        
-                end if;
-            end if;    
-        end if;
-    end process;
+--                end if;
+--            end if;    
+--    end process;
     
     
     instB_access_mem_p: process (inst_A_1st_half, inst_A_2nd_half,  inst_B_1st_half, inst_B_2nd_half) begin
@@ -573,35 +531,29 @@ begin
         end process;
     
     
-     regs_p: process (HCLK) begin 
-        if (rising_edge(HCLK)) then
-            if (internal_reset = '0') then
---                if (access_mem_value = true) then 
---                    imm8_z_ext <= imm8_z_ext;
---                    gp_WR_addr <= gp_WR_addr;
---                    gp_addrA <= gp_addrA;
---                    gp_addrB <= gp_addrB;
---                    command <= command;
---                    destination_is_PC <= destination_is_PC;
---                else
+     decoder_registers_p: process (HCLK, internal_reset) begin 
+        if internal_reset = '1' then
+            imm8_z_ext <= (others => '0');
+            gp_WR_addr <= (others => '0');
+            gp_addrA <= (others => '0');
+            gp_addrB <= (others => '0');
+            command <= NOP;
+            access_mem <= false;
+            PC_execute  <= (others => '0');
+            enable_execute <= '0';
+        else
+            if (rising_edge(HCLK)) then
+                if (enable_decode = '1') then
                     imm8_z_ext <= imm8_z_ext_value;
                     gp_WR_addr <= gp_WR_addr_value;
                     gp_addrA <= gp_addrA_value;
                     gp_addrB <= gp_addrB_value;
                     command <= command_value;
-                    destination_is_PC <= destination_is_PC_value;
-                --end if; 
---                if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTB_MEM_ACCESS) then
---                    use_PC  <= false;
---                else    
---                    use_PC <= use_PC_value; 
---                end if; 
---               if (m0_next_state = s_REFETCH_INSTB) then 
---                    access_mem <= false;
---               else     
-                    access_mem <= invalidate_pipeline;
---               end if;      
-            end if;
+                    access_mem <= access_mem_value;
+                    PC_execute  <= PC;
+                    enable_execute <= enable_execute_value;
+                end if;  
+            end if;    
         end if;
     end process;
 
@@ -609,56 +561,58 @@ begin
     
      imm8_z_ext_value_p: process  (command_value, imm8) begin
         case (command_value) is
-            when MOVS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when ADDS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when ADDS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when SUBS_imm3 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when SUBS_imm8 => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when CMP_imm8  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when LDR_imm5  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
-            when LDR_imm8  => imm8_z_ext_value <= B"0000_0000_0000_0000_0000_0000" & imm8;  -- Zero extend
+            when MOVS_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADDS_imm3 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADDS_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUBS_imm3 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUBS_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when CMP_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
     
     
-    haddr_p: process (PC, data_mem_addr_out, use_PC) begin
-        if (use_PC = true) then
-             HADDR <= data_mem_addr_out;  
-            -- HADDR <= PC;
+    --HADDR <= PC(31 downto 2) & B"00";
+    
+   HADDR <= HADDR_out;
+--    haddr_p: process (data_mem_addr_out, PC_aligned, access_mem) begin
+----        if (access_mem = true) then
+----             HADDR <= data_mem_addr_out;  
+----            -- HADDR <= PC;
+----        else
+----             HADDR <= PC_aligned;
+----        end if;   
+--    end process;
+    
+      
+    gp_data_in_p: process (HRDATA, result, access_mem) begin
+        if (access_mem = true) then
+             gp_data_in <= HRDATA;  
         else
-             HADDR <= PC;
+             gp_data_in <= result;
         end if;   
     end process;
     
-      
-    gp_data_in_p: process (result) begin
---        if (m0_core_state = s_INSTA_AFTER_MEM_ACCESS or m0_core_state = s_INSTB_AFTER_MEM_ACCESS) then
---             gp_data_in <= HRDATA;  
---        else
---             gp_data_in <= result;
---        end if;   
-        gp_data_in <= result;
-    end process;
-    
-    executor_opernd_B_p: process (gp_ram_dataB, PC_execute, use_PC) begin
-        if (use_PC = true) then
+    executor_opernd_B_p: process (gp_ram_dataB, access_mem, PC) begin
+        if (access_mem = true) then
              executor_opernd_B <= PC;  
         else
              executor_opernd_B <= gp_ram_dataB;
         end if;   
     end process;
     
---    fetched_32_bit_instruction_p: process (HCLK, HRDATA, m0_core_state) begin
+--    fetched_32_bit_instruction_p: process (HCLK, HRDATA, m0_core_state, access_mem_value) begin
 --         if (rising_edge(HCLK)) then
---            if (m0_core_state = s_INSTA_MEM_ACCESS or m0_core_state = s_INSTA_MEM_ACCESS) then
+--            if (access_mem_value = true) then
 --                fetched_32_bit_instruction <= HRDATA;  
 --            end if;    
 --        end if;   
 --    end process;
 
     
-    
+--    PC_aligned <= PC & x"FFFF_FFFC";
    
     HBURST <= B"000";
     HMASTLOCK <= '0';

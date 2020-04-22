@@ -36,17 +36,14 @@ use xil_defaultlib.helper_funcs.all;
 
 entity decoder is
     Port ( 
-        run : in std_logic; 
         instruction : in STD_LOGIC_VECTOR (15 downto 0);
-        state: in core_state_t;
+        instruction_size : out boolean;
         destination_is_PC : out std_logic;
-        thumb : out std_logic;                               -- indicates wether the decoded instruction is 16-bit thumb = 0 or 32-bit = 1
         gp_WR_addr : out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
         execution_cmd: out executor_cmds_t;
-        --use_PC: out boolean
         access_mem: out boolean
     );
 end decoder;
@@ -64,14 +61,15 @@ architecture Behavioral of decoder is
    -- alias inst_2nd_half : STD_LOGIC_VECTOR(7 downto 0) is instruction (7 downto 0);
         
 begin
-    
-    inst_under_decode_p: process(instruction) begin
-       -- inst_under_decode <= inst_2nd_half & inst_1st_half;
+
+
+     instruction_size_p: process(instruction) begin
+       -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
         case instruction(15 downto 11) is
-            when B"11101" =>   thumb <= '1';
-            when B"11110" =>   thumb <= '1';
-            when B"11111" =>   thumb <= '1';
-            when others => thumb <= '0';
+            when B"11101" =>   instruction_size <= true;
+            when B"11110" =>   instruction_size <= true;
+            when B"11111" =>   instruction_size <= true;
+            when others => instruction_size <= false;
         end case;
     end process;
     
@@ -84,8 +82,7 @@ begin
 --    end process;
 -- use_PC <= use_PC_internal;
     
-    decode_shift_op_p: process (run, instruction) begin
-        if (run = '1') then 
+    decode_shift_op_p: process (instruction) begin
             ----------------------------------------------------------------------------------- -- MOVS Rd, #<imm8>
             if std_match(opcode, "00100-") then                                                 
                gp_WR_addr <= '0' & instruction (10 downto 8); -- Rd 
@@ -313,19 +310,10 @@ begin
                gp_addrA <= (others => '0');
                gp_addrB <= (others => '0');
                imm8 <= (others => '0');
-              execution_cmd <= NOT_DEF;
+               execution_cmd <= NOT_DEF;
                destination_is_PC <= '0';
-                access_mem <= false;    
+               access_mem <= false;    
             end if;   
-        else 
-            gp_WR_addr <= (others => '0');
-            gp_addrA <= (others => '0');
-            gp_addrB <= (others => '0');
-            imm8 <= (others => '0');
-            execution_cmd <= NOT_DEF;
-            destination_is_PC <= '0';
-            access_mem <= false;    
-        end if;    
 end process;
 
 end Behavioral;
