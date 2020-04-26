@@ -4,7 +4,7 @@
 -- 
 -- Create Date: 04/20/2020 07:45:23 PM
 -- Design Name: 
--- Module Name: pipeline_invalidator_test - Behavioral
+-- Module Name: pipeline_stall_gen_test - Behavioral
 -- Project Name: 
 -- Target Devices: 
 -- Tool Versions: 
@@ -31,18 +31,18 @@ use IEEE.STD_LOGIC_1164.ALL;
 --library UNISIM;
 --use UNISIM.VComponents.all;
 
-entity pipeline_invalidator_test is
+entity pipeline_stall_gen_test is
 --  Port ( );
-end pipeline_invalidator_test;
+end pipeline_stall_gen_test;
 
-architecture Behavioral of pipeline_invalidator_test is
+architecture Behavioral of pipeline_stall_gen_test is
 
-component pipeline_invalidator is
+component pipeline_stall_gen is
     Port (
         clk : in std_logic;
         reset : in std_logic;
         trigger : in boolean;
-        invalidate_pipeline : out boolean
+        pulse : out boolean
      );
 end component;
 
@@ -52,7 +52,7 @@ end component;
     signal trigger: boolean := false;
 
     -- outputs
-    signal invalidate_pipeline: boolean := false;
+    signal pulse: boolean := false;
 
      constant half_clk : time  := 5 ns; 
 
@@ -73,11 +73,11 @@ begin
     end process;
 
     -- Instantiate UUT
-    uut: pipeline_invalidator port map (
+    uut: pipeline_stall_gen port map (
         clk => clk,
         reset => reset,
         trigger => trigger,
-        invalidate_pipeline => invalidate_pipeline
+        pulse => pulse
     );
     
     process begin

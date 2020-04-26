@@ -4,7 +4,7 @@
 -- 
 -- Create Date: 04/20/2020 07:02:13 PM
 -- Design Name: 
--- Module Name: pipeline_invalidator - Behavioral
+-- Module Name: pipeline_stall_gen - Behavioral
 -- Project Name: 
 -- Target Devices: 
 -- Tool Versions: 
@@ -36,7 +36,7 @@ entity pipeline_stall_gen is
         clk : in std_logic;
         reset : in std_logic;
         trigger : in boolean;
-        invalidate_pipeline : out boolean
+        pulse : out boolean
      );
 end pipeline_stall_gen;
 
@@ -73,10 +73,10 @@ begin
 
      invalidate_pipeline_p: process (state, trigger) begin
         case (state) is
-            when s_RESET => invalidate_pipeline <= false;
-            when s_READY => invalidate_pipeline <= trigger;
-            when s_DISENGAGE => invalidate_pipeline <= false;
-            when others =>invalidate_pipeline <= false;
+            when s_RESET => pulse <= false;
+            when s_READY => pulse <= trigger;
+            when s_DISENGAGE => pulse <= false;
+            when others =>pulse <= false;
         end case;
     end process;
     

@@ -42,6 +42,8 @@ package helper_funcs is
         s_RESET, 
        -- s_START_DELAY_CYCLE,
         s_RUN,
+        s_DATA_MEM_ACCESS,
+        s_EXECUTE_DATA_MEM_RW,
         s_FETCH_32_ALIGNED,
         --s_EXEC_INSTA_START, 
         s_EXEC_INSTA, 

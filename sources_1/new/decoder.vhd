@@ -36,15 +36,17 @@ use xil_defaultlib.helper_funcs.all;
 
 entity decoder is
     Port ( 
-        instruction : in STD_LOGIC_VECTOR (15 downto 0);
+        instruction : in std_logic_vector (15 downto 0);
+        PC : in std_logic_vector (31 downto 0);
         instruction_size : out boolean;
         destination_is_PC : out std_logic;
-        gp_WR_addr : out STD_LOGIC_VECTOR (3 downto 0);
-        gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
-        gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
-        imm8: out STD_LOGIC_VECTOR (7 downto 0);
-        execution_cmd: out executor_cmds_t;
-        access_mem: out boolean
+        gp_WR_addr : out std_logic_vector (3 downto 0);
+        gp_addrA : out std_logic_vector (3 downto 0);
+        gp_addrB : out std_logic_vector (3 downto 0);
+        imm8 : out std_logic_vector (7 downto 0);
+        execution_cmd : out executor_cmds_t;
+        data_memory_addr: out  std_logic_vector (31 downto 0); 
+        access_mem : out boolean
     );
 end decoder;
 
@@ -53,6 +55,10 @@ architecture Behavioral of decoder is
    -- signal inst_under_decode: STD_LOGIC_VECTOR (15 downto 0);
     alias opcode: STD_LOGIC_VECTOR (5 downto 0) is instruction (15 downto 10);               -- bits (15 downto 10)
     --signal use_PC_internal : boolean;
+    
+    signal data_memory_addr_i : unsigned (31 downto 0);
+    signal mul_by_4_result : unsigned (7 downto 0);
+
   
   -- aliases
     -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
@@ -81,7 +87,7 @@ begin
 --        end if;   
 --    end process;
 -- use_PC <= use_PC_internal;
-    
+
     decode_shift_op_p: process (instruction) begin
             ----------------------------------------------------------------------------------- -- MOVS Rd, #<imm8>
             if std_match(opcode, "00100-") then                                                 
@@ -305,15 +311,22 @@ begin
                 execution_cmd <= LDR_imm8;
                 destination_is_PC <= '0';   
                 access_mem <= true;    
-            else   
-               gp_WR_addr <= (others => '0');
-               gp_addrA <= (others => '0');
-               gp_addrB <= (others => '0');
-               imm8 <= (others => '0');
-               execution_cmd <= NOT_DEF;
-               destination_is_PC <= '0';
-               access_mem <= false;    
+                
+                
+
+--            else   
+--               gp_WR_addr <= (others => '0');
+--               gp_addrA <= (others => '0');
+--               gp_addrB <= (others => '0');
+--               imm8 <= (others => '0');
+--               execution_cmd <= NOT_DEF;
+--               destination_is_PC <= '0';
+--               access_mem <= false;    
             end if;   
-end process;
+    end process;
+
+    mul_by_4_result <= shift_left (unsigned (imm8), 2);
+    data_memory_addr_i <= unsigned (PC and x"FFFF_FFFC") +  unsigned(x"0000_00" & mul_by_4_result) + x"0000_0004"; 
+    data_memory_addr <= std_logic_vector (data_memory_addr_i);    
 
 end Behavioral;

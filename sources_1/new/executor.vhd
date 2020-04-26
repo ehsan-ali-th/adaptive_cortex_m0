@@ -45,7 +45,8 @@ entity executor is
          destination_is_PC : in std_logic;
          current_flags : in flag_t;
          access_mem : in boolean;
-         enable_execute: in std_logic;
+         execute_mem_rw : in boolean;
+         disable_executor : in boolean;
          
          cmd_out: out executor_cmds_t;
          set_flags : out boolean;
@@ -53,9 +54,7 @@ entity executor is
          result : out std_logic_vector(31 downto 0);
          alu_temp_32 : out std_logic;
          overflow_status : out std_logic_vector(2 downto 0);
-         WE: out std_logic;                                          -- Controls the WE pin of register bank. Used to flush the pipeline
-         data_mem_addr_out : out std_logic_vector(31 downto 0);
-         mem_access : out boolean
+         WE: out std_logic                                          -- Controls the WE pin of register bank. Used to flush the pipeline
      );
 end executor;
 
@@ -80,7 +79,7 @@ architecture Behavioral of executor is
     signal update_PC : std_logic;
     signal current_instruction_mem_location :  std_logic_vector (31 downto 0);
     signal mul_result:  std_logic_vector (31 downto 0);
-    signal data_mem_addr :  unsigned (31 downto 0);
+    signal mem_access: boolean;
     
  
 begin
@@ -109,7 +108,7 @@ begin
     alu_temp_32 <= alu_temp(32);
     
     -- This process  flushes the pipeline if PC gets updated.
-    WE_p: process  (WE_val, enable_execute) begin
+    WE_p: process  (WE_val, execute_mem_rw, access_mem) begin
 --        if ( --state = s_PC_UPDATED_INVALID or 
 --            state = s_EXEC_INSTA_INVALID or 
 --            state = s_EXEC_INSTB_INVALID or 
@@ -121,12 +120,13 @@ begin
 --        elsif ((state = s_EXEC_INSTA or state = s_EXEC_INSTB) and access_mem = true) then
 --            WE <= '1';    
 --        else    
-        if (enable_execute = '1') then
-            WE <= WE_val;
+        if (execute_mem_rw = true) then
+            WE <= '1';
+        elsif (access_mem = true) then
+             WE <= '0';   
         else
-            WE <= '0';
+             WE <= WE_val;
         end if;    
---        end if;    
     end process;
     
     execution_p: process  (command, destination_is_PC, operand_A(31), operand_B(31),  alu_result(31), imm8_z_ext(31)) begin
@@ -326,7 +326,7 @@ begin
                 mem_access <= true;
             ------------------------------------------------------------ --  LDR <Rt>,<label>
             when LDR_imm8 =>                                               
-                WE_val <= '0';              
+                WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 update_PC <= '0'; 
@@ -480,7 +480,7 @@ begin
                 -- address = if index then offset_addr else R[n];
                 -- R[t] = MemU[address,4];
                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used
-                data_mem_addr <= unsigned (operand_B) + unsigned (imm8_z_ext);
+                --data_mem_addr <= unsigned (operand_B) + unsigned (imm8_z_ext);
             -------------------------------------------------------------------------------------- --   LDR <Rt>,<label>
             when LDR_imm8 =>             
                 -- offset_addr = if add then (R[n] + imm32) else (R[n] - imm32);
@@ -495,7 +495,7 @@ begin
                 -- Check to see is LDR resides in odd memory location or even.
                 -- For odd case we don;t need to add 4
                 -- For even case plus 4 is needed.
-                data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
+                --data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
 --                if (state = s_INSTA_MEM_ACCESS) then
 --                    data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
 --                elsif (state = s_INSTB_MEM_ACCESS) then
@@ -514,7 +514,7 @@ begin
 
      alu_result <= std_logic_vector(alu_temp(31 downto 0));
      result <= result_final;
-     data_mem_addr_out <= std_logic_vector(data_mem_addr);
+
      
     -- If core is at state s_EXEC_INSTA then the current memory address of the currect instruction is PC.
     --  but if the core is at state s_EXEC_INSTB then current memory address of the currect instruction is PC - 2
