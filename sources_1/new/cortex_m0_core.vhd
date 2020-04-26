@@ -397,21 +397,22 @@ begin
     end process;
     
     haddr_p: process (haddr_ctrl, data_memory_addr, HADDR_out) begin
-        if (haddr_ctrl = true) then
-             HADDR <= data_memory_addr;  
-        else
+--        if (haddr_ctrl = true) then
+--             HADDR <= data_memory_addr;  
+--        else
              HADDR <= HADDR_out;
-        end if;   
+--        end if;   
     end process;
     
     hrdata_p: process (HRDATA, disable_fetch, execute_mem_rw) begin
-            if (disable_fetch = true or execute_mem_rw = true) then
---                if (execute_mem_rw = true) then
-                    hrdata_data_value <= HRDATA; 
---                end if;       
-            else    
-                 hrdata_progrm_value <= HRDATA;    
-            end if;
+--            if (disable_fetch = true or execute_mem_rw = true) then
+----                if (execute_mem_rw = true) then
+--                    hrdata_data_value <= HRDATA; 
+----                end if;       
+--            else   
+              if (disable_fetch = false) then                   
+                 hrdata_progrm_value <= HRDATA;
+              end if;       
     end process;
       
     gp_data_in_p: process (execute_mem_rw, hrdata_data_value, result) begin
