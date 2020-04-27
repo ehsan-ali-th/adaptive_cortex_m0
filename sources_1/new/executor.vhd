@@ -108,7 +108,7 @@ begin
     alu_temp_32 <= alu_temp(32);
     
     -- This process  flushes the pipeline if PC gets updated.
-    WE_p: process  (WE_val, execute_mem_rw, access_mem) begin
+    WE_p: process  (WE_val, execute_mem_rw, access_mem, disable_executor) begin
 --        if ( --state = s_PC_UPDATED_INVALID or 
 --            state = s_EXEC_INSTA_INVALID or 
 --            state = s_EXEC_INSTB_INVALID or 
@@ -119,10 +119,12 @@ begin
 --            WE <= '0';
 --        elsif ((state = s_EXEC_INSTA or state = s_EXEC_INSTB) and access_mem = true) then
 --            WE <= '1';    
---        else    
+--        else 
+
+           
         if (execute_mem_rw = true) then
             WE <= '1';
-        elsif (access_mem = true) then
+        elsif (access_mem = true or disable_executor = true) then
              WE <= '0';   
         else
              WE <= WE_val;

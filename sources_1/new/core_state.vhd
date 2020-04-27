@@ -40,13 +40,16 @@ entity core_state is
         reset : in std_logic;
         instruction_size : in boolean;      -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
         access_mem : in boolean;
-        HADDR : out std_logic_vector(31 downto 0);
         PC : out std_logic_vector(31 downto 0);
+        PC_decode : out std_logic_vector (31 downto 0);
+        PC_execute :  out std_logic_vector (31 downto 0);
         execute_mem_rw : out boolean;
         disable_fetch : out boolean;
-        haddr_ctrl : out boolean;            -- true  = put data memory address on the bus, 
-                                            -- false = put program memory address on the bus
-        disable_executor : out boolean                                   
+        haddr_ctrl : out boolean;               -- true  = put data memory address on the bus, 
+                                                -- false = put program memory address on the bus
+        disable_executor : out boolean;
+        refetch : out boolean            
+                                
 
         --PC_upda ted : in std_logic;
         --access_mem : in boolean;
@@ -74,8 +77,10 @@ architecture Behavioral of core_state is
     signal m0_core_next_state :  core_state_t;
     signal size_of_executed_instruction : unsigned (31 downto 0);
     signal PC_value :  unsigned(31 downto 0);
-    signal HADDR_enable : boolean;
-	signal refetch : boolean;
+	signal refetch_i : boolean;
+--	signal prev_instr_accessed_memory : boolean;
+--	signal prev_instr_accessed_memory_value : boolean;
+
 	
             
 begin
@@ -90,39 +95,39 @@ begin
     --HADDR <= std_logic_vector(HADDR_value);
    -- access_data_section <= invalidate_pipeline;
   
+    refetch <= disable_fetch;
     
-    PC_p: process (clk, reset, m0_core_state, refetch) begin
+  
+    
+    PC_p: process (clk, reset, m0_core_state, refetch_i) begin
         if (reset = '1') then
             PC <= x"0000_0000";
-            --HADDR <= x"0000_0000";
+            PC_decode <= x"0000_0000";
+            PC_execute  <= x"0000_0000"; 
         else    
             if (rising_edge(clk)) then
-                if (refetch = false) then 
+                if (refetch_i = false) then 
                     PC <= std_logic_vector(PC_value);
+                    PC_decode <= PC;
+                    PC_execute <= PC_decode;
+                     
                 end if;
             end if;    
         end if;
     end process;
     
-    PC_value_p : process (size_of_executed_instruction, PC, m0_core_state, refetch) begin
+    PC_value_p : process (size_of_executed_instruction, PC, m0_core_state, refetch_i) begin
         if (m0_core_state = s_RESET) then
-            PC_value <= x"0000_0000";
+            PC_value <= x"0000_0002";
         else  
-             if (refetch = false) then 
+             if (refetch_i = false) then 
                     PC_value <= size_of_executed_instruction + unsigned(PC);
             end if;      
             
         end if; 
     end process;
 
-    HRDATA_valuep : process (PC_value, m0_core_state, HADDR_enable) begin
-        if (m0_core_state = s_RESET) then
-            HADDR <= x"0000_0000";
-        else 
-            HADDR <= std_logic_vector((unsigned (PC_value ) + 2) and x"FFFF_FFFC");
-        end if;
-    end process;
-    
+   
     state_p: process (clk) begin
         if (reset = '1') then
              m0_core_state <= s_RESET;
@@ -142,6 +147,24 @@ begin
         end if;
      end process;
      
+--       haddr_p: process (haddr_ctrl, data_memory_addr, HADDR_out) begin
+----        if (haddr_ctrl = true) then
+----             HADDR <= data_memory_addr;  
+----        else
+--             HADDR <= HADDR_out;
+----        end if;   
+--    end process;
+     
+--     prev_instr_accessed_memory_p: process (clk, reset) begin
+--        if (reset = '1') then
+--            prev_instr_accessed_memory <= false;
+--        else
+--            if (rising_edge(clk)) then    
+--                prev_instr_accessed_memory <= prev_instr_accessed_memory_value;  
+--            end if;     
+--        end if;
+--     end process;
+     
 --     HADDR_enable <= true;
      
       -- and (m0_core_state = s_RUN or m0_core_state = s_EXECUTE_DATA_MEM_RW)) s_DATA_MEM_ACCESS
@@ -158,7 +181,9 @@ begin
              m0_core_next_state <= s_RESET;
         else     
             case (m0_core_state) is
-                when s_RESET => m0_core_next_state <=s_RUN;  
+                when s_RESET => m0_core_next_state <= s_RESET1;  
+                when s_RESET1 => m0_core_next_state <= s_RESET2;  
+                when s_RESET2 => m0_core_next_state <= s_RUN;  
                 --when s_START_DELAY_CYCLE => m0_core_next_state <= s_RUN;  
                 when s_RUN =>  
                     if (access_mem = true) then 
@@ -172,7 +197,9 @@ begin
                         m0_core_next_state <= s_DATA_MEM_ACCESS;
                     else    
                         m0_core_next_state <= s_RUN;     
-                    end if;  
+                    end if; 
+                
+               
 --                when s_EXEC_INSTA_START =>  
 --                     if (PC_updated = '0') then
 --                         if (use_PC_value = true) then  
@@ -274,21 +301,24 @@ begin
 
       output_p: process (m0_core_state, access_mem, PC(1)) begin
         case (m0_core_state) is
-            when s_RESET => refetch <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= false; haddr_ctrl <= false;
+            when s_RESET => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
+            when s_RESET1 => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
+            when s_RESET2 => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
+ 
            -- when s_START_DELAY_CYCLE => enable_decode <= '0'; enable_execute <= '0';
-            when s_RUN =>  refetch <= access_mem; execute_mem_rw <= false; disable_fetch <= access_mem; disable_executor <= false; haddr_ctrl <= false;
-            when s_DATA_MEM_ACCESS =>  refetch <= false; execute_mem_rw <= false;  disable_executor <= false; haddr_ctrl <= true;
-                if (PC(1) = '0') then
-                    disable_fetch <= true;
-                else
-                    disable_fetch <= false;
-                end if;    
-            when s_EXECUTE_DATA_MEM_RW =>  refetch <= access_mem; execute_mem_rw <= true; disable_executor <= false; haddr_ctrl <= false;
-                if (access_mem = true) then
-                    disable_fetch <= true;
-                else
-                    disable_fetch <= false;
-                end if;    
+            when s_RUN =>  refetch_i <= access_mem; execute_mem_rw <= false;  disable_executor <= false; haddr_ctrl <= false;
+                disable_fetch <= access_mem;
+ 
+            when s_DATA_MEM_ACCESS =>  refetch_i <= false; execute_mem_rw <= false;  disable_executor <= true; haddr_ctrl <= true;
+                
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= access_mem;
+                    end if;
+            when s_EXECUTE_DATA_MEM_RW =>  refetch_i <= access_mem; execute_mem_rw <= true; disable_executor <= false; haddr_ctrl <= false;
+                   disable_fetch <= access_mem;
+                   
                 
 --            when s_EXEC_INSTA_START =>  
 --            when s_EXEC_INSTA => 
@@ -299,7 +329,8 @@ begin
 --            when s_PC_UNALIGNED =>
 --            when s_REFETCH_INSTB =>
 --            when s_REFETCH_INSTA => 
-            when others =>  refetch <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= false; haddr_ctrl <= false;
+            when others =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= false; haddr_ctrl <= false;
+
         end case;
     end process;       
     

@@ -40,7 +40,9 @@ package helper_funcs is
 
     type core_state_t is (
         s_RESET, 
-       -- s_START_DELAY_CYCLE,
+        s_RESET1, 
+        s_RESET2, 
+        -- s_START_DELAY_CYCLE,
         s_RUN,
         s_DATA_MEM_ACCESS,
         s_EXECUTE_DATA_MEM_RW,

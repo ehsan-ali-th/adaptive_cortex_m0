@@ -136,12 +136,14 @@ architecture Behavioral of cortex_m0_core is
             reset : in std_logic;
             instruction_size : in boolean;      -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
             access_mem : in boolean;
-            HADDR : out std_logic_vector(31 downto 0);
             PC : out std_logic_vector(31 downto 0);
+            PC_decode : out std_logic_vector (31 downto 0);
+            PC_execute :  out std_logic_vector (31 downto 0);
             execute_mem_rw : out boolean;
             disable_fetch : out boolean;
             haddr_ctrl : out boolean;
-            disable_executor : out boolean
+            disable_executor : out boolean;
+            refetch : out boolean     
         );
     end component;
     
@@ -170,6 +172,8 @@ architecture Behavioral of cortex_m0_core is
 			
 	-- M0 Core signals 
     signal PC: std_logic_vector (31 downto 0);
+    signal PC_decode:  std_logic_vector (31 downto 0);
+    signal PC_execute:  std_logic_vector (31 downto 0);
 	signal instruction_size : boolean;
 	signal current_instruction: std_logic_vector (15 downto 0);
 	signal enable_decode : std_logic;
@@ -182,16 +186,14 @@ architecture Behavioral of cortex_m0_core is
 	
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
---    signal PC_VALUE:  std_logic_vector (31 downto 0);
---    signal PC_plus_2:  std_logic_vector (31 downto 0);
+
 --    signal PC_aligned:  std_logic_vector (31 downto 0);
     signal internal_reset: std_logic := '1';
     signal thumb: std_logic := '0';
     signal valid: std_logic := '0';
     signal decode_phase : std_logic;     
     signal decode_phase_value : std_logic;     
---    signal PC_decode:  std_logic_vector (31 downto 0);
---    signal PC_execute:  std_logic_vector (31 downto 0);
+  
     signal instA_access_mem : boolean;
     signal instB_access_mem : boolean;
     
@@ -246,6 +248,7 @@ architecture Behavioral of cortex_m0_core is
     signal disable_fetch : boolean;
     signal haddr_ctrl : boolean;
     signal disable_executor : boolean;
+    signal refetch : boolean;
     
     
     
@@ -297,7 +300,7 @@ begin
     );
     
     m0_decoder: decoder port map ( 
-        PC => PC,
+        PC => PC_execute,
         instruction => current_instruction,
         instruction_size => instruction_size,
         destination_is_PC => destination_is_PC_value,
@@ -336,12 +339,14 @@ begin
             reset => internal_reset,
             instruction_size => instruction_size,
             access_mem => access_mem_value,
-            HADDR => HADDR_out,
             PC => PC,
+            PC_decode => PC_decode,
+            PC_execute => PC_execute,
             execute_mem_rw => execute_mem_rw,
             disable_fetch => disable_fetch,
             haddr_ctrl => haddr_ctrl,
-            disable_executor => disable_executor
+            disable_executor => disable_executor,
+            refetch => refetch
         ); 
         
      m0_core_flags: status_flags port map (
@@ -354,6 +359,20 @@ begin
             overflow_status => overflow_status,
             flags_o  => flags
         );
+        
+        
+    HADDR_p : process (haddr_ctrl, data_memory_addr_value, PC(31 downto 2)) begin
+        if (haddr_ctrl = true) then
+            -- true = put data memory address on the bus, 
+            HADDR <= data_memory_addr_value;
+        else  
+            -- false = put program memory address on the bus
+            HADDR <= PC(31 downto 2) & B"00";  
+        end if; 
+    end process;    
+        
+        
+ 
         
     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -396,23 +415,14 @@ begin
         decode_phase_value <= not decode_phase;
     end process;
     
-    haddr_p: process (haddr_ctrl, data_memory_addr, HADDR_out) begin
---        if (haddr_ctrl = true) then
---             HADDR <= data_memory_addr;  
---        else
-             HADDR <= HADDR_out;
---        end if;   
-    end process;
-    
-    hrdata_p: process (HRDATA, disable_fetch, execute_mem_rw) begin
---            if (disable_fetch = true or execute_mem_rw = true) then
-----                if (execute_mem_rw = true) then
---                    hrdata_data_value <= HRDATA; 
-----                end if;       
---            else   
-              if (disable_fetch = false) then                   
-                 hrdata_progrm_value <= HRDATA;
-              end if;       
+  
+     
+    hrdata_p: process (execute_mem_rw, HRDATA) begin
+        if (execute_mem_rw = true) then
+            hrdata_data_value <= HRDATA; 
+        else   
+            hrdata_progrm_value <= HRDATA;
+        end if;    
     end process;
       
     gp_data_in_p: process (execute_mem_rw, hrdata_data_value, result) begin
@@ -588,18 +598,18 @@ begin
             data_memory_addr <= (others => '0');
         else
             if (rising_edge(HCLK)) then
-               --if (access_mem = false) then
                     imm8_z_ext <= imm8_z_ext_value;
                     gp_WR_addr <= gp_WR_addr_value;
                     gp_addrA <= gp_addrA_value;
                     gp_addrB <= gp_addrB_value;
                     command <= command_value;
+                if (refetch = false) then
                     access_mem <= access_mem_value;
                     enable_execute <= enable_execute_value;
                     hrdata_data <= hrdata_data_value; 
                     hrdata_progrm <= hrdata_progrm_value;
                     data_memory_addr <= data_memory_addr_value;
-               --end if;  
+                end if;  
             end if;    
         end if;
     end process;
