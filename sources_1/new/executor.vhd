@@ -42,7 +42,7 @@ entity executor is
          operand_B : in std_logic_vector(31 downto 0);	
          command: in executor_cmds_t;	
          imm8_z_ext : in  std_logic_vector(31 downto 0);
-         destination_is_PC : in std_logic;
+         destination_is_PC : in boolean;
          current_flags : in flag_t;
          access_mem : in boolean;
          execute_mem_rw : in boolean;
@@ -50,7 +50,6 @@ entity executor is
          
          cmd_out: out executor_cmds_t;
          set_flags : out boolean;
-         PC_updated: out std_logic;
          result : out std_logic_vector(31 downto 0);
          alu_temp_32 : out std_logic;
          overflow_status : out std_logic_vector(2 downto 0);
@@ -90,8 +89,7 @@ begin
             result => mul_result
         );
         
-    PC_updated <= destination_is_PC;
-   
+  
         
     gp_data_in_p: process  (imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
         case mux_ctrl is
@@ -109,19 +107,6 @@ begin
     
     -- This process  flushes the pipeline if PC gets updated.
     WE_p: process  (WE_val, execute_mem_rw, access_mem, disable_executor) begin
---        if ( --state = s_PC_UPDATED_INVALID or 
---            state = s_EXEC_INSTA_INVALID or 
---            state = s_EXEC_INSTB_INVALID or 
---            state = s_PC_UNALIGNED 
---           -- or state = s_INSTA_MEM_ACCESS or 
---            --state = s_INSTB_MEM_ACCESS
---            ) then
---            WE <= '0';
---        elsif ((state = s_EXEC_INSTA or state = s_EXEC_INSTB) and access_mem = true) then
---            WE <= '1';    
---        else 
-
-           
         if (execute_mem_rw = true) then
             WE <= '1';
         elsif (access_mem = true or disable_executor = true) then
@@ -152,8 +137,8 @@ begin
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 -- if destination_is_PC = 1 it means d == 15 (destination is PC) then set_flags is always FALSE
-                if (destination_is_PC = '1') then set_flags <= false; else set_flags <= true; end if;
-                if (destination_is_PC = '1') then update_PC <= '1'; else update_PC <= '0'; end if;
+                if (destination_is_PC = true) then set_flags <= false; else set_flags <= true; end if;
+                if (destination_is_PC = true) then update_PC <= '1'; else update_PC <= '0'; end if;
                 mem_access <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,#<imm3>      
             when ADDS_imm3 =>                                        
@@ -350,7 +335,7 @@ begin
        end case;  
      end process;
      
-    alu_p: process  (command, operand_A, operand_B, current_instruction_mem_location, imm8_z_ext, mul_result, current_flags) 
+    alu_p: process  (command, operand_A, operand_B, imm8_z_ext, mul_result, current_flags) 
         variable  mul_result_for_LDR : std_logic_vector(63 downto 0);
     begin
     
@@ -370,7 +355,7 @@ begin
             -------------------------------------------------------------------------------------- -- ADD PC, <Rm> 
             when ADD_PC =>          
                 -- AAddWithCarry(R[n], shifted, '0');
-                alu_temp <= (unsigned ("0" & current_instruction_mem_location) +                        
+                alu_temp <= (unsigned ("0" & operand_A) +                        
                               unsigned("0" & operand_B) + 2)
                               and B"1_1111_1111_1111_1111_1111_1111_1111_1110"; 
             -------------------------------------------------------------------------------------- -- ADDS <Rdn>,#<imm8>                                                    

@@ -42,25 +42,13 @@ package helper_funcs is
         s_RESET, 
         s_RESET1, 
         s_RESET2, 
-        -- s_START_DELAY_CYCLE,
         s_RUN,
         s_DATA_MEM_ACCESS,
         s_EXECUTE_DATA_MEM_RW,
-        s_FETCH_32_ALIGNED,
-        --s_EXEC_INSTA_START, 
-        s_EXEC_INSTA, 
-        s_EXEC_INSTB, 
-        s_PC_UPDATED_INVALID,
-        s_EXEC_INSTA_INVALID,
-        s_EXEC_INSTB_INVALID,
-        s_PC_UNALIGNED,
-        s_REFETCH_INSTA,
-        s_REFETCH_INSTB
---        s_INSTA_MEM_ACCESS,
---        s_INSTB_MEM_ACCESS,
---        s_INSTA_AFTER_MEM_ACCESS,
---        s_INSTB_AFTER_MEM_ACCESS,
---        s_MEM_ACCESS   
+        s_PC_UPDATED,
+        s_PIPELINE_FLUSH1,
+        s_PIPELINE_FLUSH2,
+        s_PIPELINE_FLUSH3
         );
 
     type executor_cmds_t is (                               -- Executor commands

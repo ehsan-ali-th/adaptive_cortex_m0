@@ -40,77 +40,49 @@ entity core_state is
         reset : in std_logic;
         instruction_size : in boolean;      -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
         access_mem : in boolean;
-        PC : out std_logic_vector(31 downto 0);
+        PC_updated : in boolean;
+        new_PC : in std_logic_vector (31 downto 0);
+        PC : out std_logic_vector (31 downto 0);
         PC_decode : out std_logic_vector (31 downto 0);
         PC_execute :  out std_logic_vector (31 downto 0);
+        PC_after_execute :  out std_logic_vector (31 downto 0);
         execute_mem_rw : out boolean;
         disable_fetch : out boolean;
         haddr_ctrl : out boolean;               -- true  = put data memory address on the bus, 
                                                 -- false = put program memory address on the bus
         disable_executor : out boolean;
-        refetch : out boolean            
-                                
-
-        --PC_upda ted : in std_logic;
-        --access_mem : in boolean;
-        --PC_2bit_LSB : in std_logic_vector(1 downto 0);
-       -- use_PC_value: in boolean;
-        --instr_ptr: out std_logic;
-        --state : out core_state_t;
-        --next_state : out core_state_t;
-        --m0_previous_state : out core_state_t
+        gp_addrA_executor_ctrl : out boolean
+          
     );
 end core_state;
 
 architecture Behavioral of core_state is
-
---    component pipeline_stall_gen is
---        Port (
---            clk : in std_logic;
---            reset : in std_logic;
---            trigger : in boolean;
---            pulse : out boolean
---         );
---    end component;
 
     signal m0_core_state :  core_state_t;
     signal m0_core_next_state :  core_state_t;
     signal size_of_executed_instruction : unsigned (31 downto 0);
     signal PC_value :  unsigned(31 downto 0);
 	signal refetch_i : boolean;
---	signal prev_instr_accessed_memory : boolean;
---	signal prev_instr_accessed_memory_value : boolean;
-
-	
             
 begin
 
---    m0_pipeline_stall_gen: pipeline_stall_gen port map (
---        clk => clk,
---        reset => reset,
---        trigger => access_mem,
---        pulse => refetch
---    );
-
-    --HADDR <= std_logic_vector(HADDR_value);
-   -- access_data_section <= invalidate_pipeline;
-  
-    refetch <= disable_fetch;
-    
-  
-    
-    PC_p: process (clk, reset, m0_core_state, refetch_i) begin
+    PC_p: process (clk, reset) begin
         if (reset = '1') then
             PC <= x"0000_0000";
             PC_decode <= x"0000_0000";
             PC_execute  <= x"0000_0000"; 
+            PC_after_execute  <= x"0000_0000"; 
         else    
             if (rising_edge(clk)) then
                 if (refetch_i = false) then 
-                    PC <= std_logic_vector(PC_value);
+                    if (gp_addrA_executor_ctrl = false) then
+                        PC <= std_logic_vector(PC_value);           -- normal
+                    else
+                        PC <= new_PC;
+                    end if;    
                     PC_decode <= PC;
                     PC_execute <= PC_decode;
-                     
+                    PC_after_execute <= PC_execute;
                 end if;
             end if;    
         end if;
@@ -145,38 +117,9 @@ begin
         else
             size_of_executed_instruction <= x"0000_0002";
         end if;
-     end process;
+    end process;
      
---       haddr_p: process (haddr_ctrl, data_memory_addr, HADDR_out) begin
-----        if (haddr_ctrl = true) then
-----             HADDR <= data_memory_addr;  
-----        else
---             HADDR <= HADDR_out;
-----        end if;   
---    end process;
-     
---     prev_instr_accessed_memory_p: process (clk, reset) begin
---        if (reset = '1') then
---            prev_instr_accessed_memory <= false;
---        else
---            if (rising_edge(clk)) then    
---                prev_instr_accessed_memory <= prev_instr_accessed_memory_value;  
---            end if;     
---        end if;
---     end process;
-     
---     HADDR_enable <= true;
-     
-      -- and (m0_core_state = s_RUN or m0_core_state = s_EXECUTE_DATA_MEM_RW)) s_DATA_MEM_ACCESS
---     HADDR_enable_p: process (PC(1), m0_core_state) begin
---        if (m0_core_state = s_RUN or m0_core_state = s_DATA_MEM_ACCESS)  then
---            HADDR_enable <= true;
---        else
---            HADDR_enable <= false;
---        end if;
---     end process;
-
-    next_state_p: process (m0_core_state, reset, access_mem) begin
+    next_state_p: process (m0_core_state, reset, access_mem, PC_updated) begin
         if (reset = '1') then
              m0_core_next_state <= s_RESET;
         else     
@@ -184,21 +127,31 @@ begin
                 when s_RESET => m0_core_next_state <= s_RESET1;  
                 when s_RESET1 => m0_core_next_state <= s_RESET2;  
                 when s_RESET2 => m0_core_next_state <= s_RUN;  
-                --when s_START_DELAY_CYCLE => m0_core_next_state <= s_RUN;  
                 when s_RUN =>  
+                    -- CHECK if instruction needs memory access
                     if (access_mem = true) then 
                         m0_core_next_state <= s_DATA_MEM_ACCESS;
+                    -- CHECK if instruction updates PC
+                    elsif (PC_updated = true) then
+                       m0_core_next_state <= s_PC_UPDATED;
                     else    
                         m0_core_next_state <= s_RUN;     
                     end if;    
                 when s_DATA_MEM_ACCESS => m0_core_next_state <= s_EXECUTE_DATA_MEM_RW; 
                 when s_EXECUTE_DATA_MEM_RW =>
-                if (access_mem = true) then 
+                    if (access_mem = true) then 
                         m0_core_next_state <= s_DATA_MEM_ACCESS;
                     else    
                         m0_core_next_state <= s_RUN;     
                     end if; 
-                
+               when s_PC_UPDATED =>   
+                    m0_core_next_state <= s_PIPELINE_FLUSH1;
+               when s_PIPELINE_FLUSH1 =>   
+                    m0_core_next_state <= s_PIPELINE_FLUSH2;
+               when s_PIPELINE_FLUSH2 =>   
+                    m0_core_next_state <= s_PIPELINE_FLUSH3;
+               when s_PIPELINE_FLUSH3 =>   
+                    m0_core_next_state <= s_RUN;
                
 --                when s_EXEC_INSTA_START =>  
 --                     if (PC_updated = '0') then
@@ -301,23 +254,39 @@ begin
 
       output_p: process (m0_core_state, access_mem, PC(1)) begin
         case (m0_core_state) is
-            when s_RESET => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
+            when s_RESET => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+                gp_addrA_executor_ctrl <= false; 
             when s_RESET1 => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
+                gp_addrA_executor_ctrl <= false;
             when s_RESET2 => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
+                gp_addrA_executor_ctrl <= false;
  
            -- when s_START_DELAY_CYCLE => enable_decode <= '0'; enable_execute <= '0';
             when s_RUN =>  refetch_i <= access_mem; execute_mem_rw <= false;  disable_executor <= false; haddr_ctrl <= false;
                 disable_fetch <= access_mem;
+                gp_addrA_executor_ctrl <= false;
  
             when s_DATA_MEM_ACCESS =>  refetch_i <= false; execute_mem_rw <= false;  disable_executor <= true; haddr_ctrl <= true;
-                
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
                         disable_fetch <= access_mem;
                     end if;
+                    gp_addrA_executor_ctrl <= false;
             when s_EXECUTE_DATA_MEM_RW =>  refetch_i <= access_mem; execute_mem_rw <= true; disable_executor <= false; haddr_ctrl <= false;
                    disable_fetch <= access_mem;
+                   gp_addrA_executor_ctrl <= false;
+                   
+            when s_PC_UPDATED =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+                gp_addrA_executor_ctrl <= true; 
+            when s_PIPELINE_FLUSH1 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+                gp_addrA_executor_ctrl <= false; 
+            when s_PIPELINE_FLUSH2 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+                gp_addrA_executor_ctrl <= false; 
+            when s_PIPELINE_FLUSH3 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+                gp_addrA_executor_ctrl <= false; 
+             
+               
                    
                 
 --            when s_EXEC_INSTA_START =>  
@@ -330,6 +299,7 @@ begin
 --            when s_REFETCH_INSTB =>
 --            when s_REFETCH_INSTA => 
             when others =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= false; haddr_ctrl <= false;
+                gp_addrA_executor_ctrl <= false;
 
         end case;
     end process;       
