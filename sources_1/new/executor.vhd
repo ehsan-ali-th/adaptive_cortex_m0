@@ -438,20 +438,4 @@ begin
      alu_result <= std_logic_vector(alu_temp(31 downto 0));
      result <= result_final;
 
-     
-    -- If core is at state s_EXEC_INSTA then the current memory address of the currect instruction is PC.
-    --  but if the core is at state s_EXEC_INSTB then current memory address of the currect instruction is PC - 2
-    -- The to PC instrution adds to current memory location which must be calculates based on the observations stated above.
---    current_instruction_mem_location_p: process (state, operand_A) begin
---        if (state = s_EXEC_INSTA) then
---            current_instruction_mem_location <= operand_A;    -- OperanA will carry the PC if update_PC signal is activated
---        else
---            current_instruction_mem_location <= STD_LOGIC_VECTOR (unsigned (operand_A) + 2);
---        end if;
---    end process;
-    
-    
- 
-
-
 end Behavioral;

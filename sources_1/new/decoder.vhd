@@ -52,22 +52,12 @@ end decoder;
 
 architecture Behavioral of decoder is
     signal is_shift_class_instruction: std_logic;               -- 0 : is not shift class, 1: is shift class. 
-   -- signal inst_under_decode: STD_LOGIC_VECTOR (15 downto 0);
     alias opcode: STD_LOGIC_VECTOR (5 downto 0) is instruction (15 downto 10);               -- bits (15 downto 10)
-    --signal use_PC_internal : boolean;
     
     signal data_memory_addr_i : unsigned (31 downto 0);
     signal mul_by_4_result : unsigned (7 downto 0);
 
-  
-  -- aliases
-    -- [      inst A 1st half    ] [     inst A 2nd half     ] [    inst B 1st half    ]   [ inst B 2nd half ] 
-    -- [31 30 29 28 - 27 26 25 24] [23 22 21 20 - 19 18 17 16] [15 14 13 12 - 11 10 9 8] - [7 6 5 4 - 3 2 1 0]
-    --alias inst_1st_half : STD_LOGIC_VECTOR(7 downto 0) is instruction (15 downto 8);
-   -- alias inst_2nd_half : STD_LOGIC_VECTOR(7 downto 0) is instruction (7 downto 0);
-        
 begin
-
 
      instruction_size_p: process(instruction) begin
        -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
@@ -79,15 +69,6 @@ begin
         end case;
     end process;
     
---    use_PC_p: process (state) begin
---        if (state = s_INSTA_MEM_ACCESS or state = s_INSTB_MEM_ACCESS) then
---            use_PC <=  use_PC_internal;
---        else   
---           use_PC <= use_PC_internal;
---        end if;   
---    end process;
--- use_PC <= use_PC_internal;
-
     decode_shift_op_p: process (instruction) begin
             ----------------------------------------------------------------------------------- -- MOVS Rd, #<imm8>
             if std_match(opcode, "00100-") then                                                 
@@ -358,26 +339,24 @@ begin
             ----------------------------------------------------------------------------------- -- LDR <Rt>,<label>
             elsif (std_match(opcode, "01001-") ) then       
                 gp_WR_addr <= '0' & instruction (10 downto 8);           -- Rt
+                gp_addrB <= "0000";             
                 imm8 <= instruction (7 downto 0);                        -- imm8
                 execution_cmd <= LDR_label;
                 destination_is_PC <= false;   
                 access_mem <= true;    
-                
-                
-
---            else   
---               gp_WR_addr <= (others => '0');
---               gp_addrA <= (others => '0');
---               gp_addrB <= (others => '0');
---               imm8 <= (others => '0');
---               execution_cmd <= NOT_DEF;
---               destination_is_PC <= false;
---               access_mem <= false;    
             end if;   
     end process;
 
+
+    -- base = Align(PC,4);
+    -- address = if add then (base + imm32) else (base - imm32);
+    -- R[t] = MemU[address,4];
     mul_by_4_result <= shift_left (unsigned (imm8), 2);
     data_memory_addr_i <= unsigned (PC and x"FFFF_FFFC") +  unsigned(x"0000_00" & mul_by_4_result) + x"0000_0004"; 
-    data_memory_addr <= std_logic_vector (data_memory_addr_i);    
+    data_memory_addr <= std_logic_vector (data_memory_addr_i);   
+    
+    -- offset_addr = if add then (R[n] + imm32) else (R[n] - imm32);
+    -- address = if index then offset_addr else R[n];
+    -- R[t] = MemU[address,4]; 
 
 end Behavioral;

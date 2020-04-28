@@ -153,100 +153,6 @@ begin
                when s_PIPELINE_FLUSH3 =>   
                     m0_core_next_state <= s_RUN;
                
---                when s_EXEC_INSTA_START =>  
---                     if (PC_updated = '0') then
---                         if (use_PC_value = true) then  
---                            m0_core_next_state <= s_INSTB_MEM_ACCESS;
---                         else
---                             core_inst_ptr <= core_inst_ptr + 1;
---                            m0_core_next_state <= s_EXEC_INSTB;
---                         end if;  
---                            if (mem_access = true) then 
---                            m0_core_state_after_mem_access <= s_EXEC_INSTB; 
---                            m0_core_next_state <= s_MEM_ACCESS; 
---                        else
---                            m0_core_next_state <= s_EXEC_INSTB;
---                        end if;
---                    else 
---                        m0_core_next_state <= s_PC_UPDATED_INVALID;
---    end if;   
---                when s_EXEC_INSTA => 
---                    if (PC_updated = '0') then
---                        if (access_mem = true) then  
---                            m0_core_next_state <= s_REFETCH_INSTA; -- refetch INSTA 
---                        else
---                            m0_core_next_state <= s_EXEC_INSTB;
---                        end if; 
---                    else 
---                        m0_core_next_state <= s_PC_UPDATED_INVALID;
---                    end if;    
---                when s_EXEC_INSTB => 
---                    if (PC_updated = '0') then
---                        if (access_mem = true) then  
---                            m0_core_next_state <= s_REFETCH_INSTB; -- refetch INSTB 
---                        else
---                            m0_core_next_state <= s_EXEC_INSTA;
---                        end if; 
---                    else 
---                        m0_core_next_state <= s_PC_UPDATED_INVALID;
---                    end if;  
---                when s_PC_UPDATED_INVALID => m0_core_next_state <= s_EXEC_INSTB_INVALID;
---                when s_EXEC_INSTA_INVALID => 
---                     PC can only be unaligned if the user loads a value into the PC.
---                     The following instructions update the PC:
-                     
---                     MOV PC, Rm
---                     ADD PC,<Rm>
-                    
---                     In those case the pipeline gets invalidated and then it jumps to new PC to fetch data.
---                     Always the last invalid state is s_EXEC_INSTA_INVALID. So if the PC is unaligned we 
---                     just need to extend the pipeline invalid state one more cycle.
---                    if (PC_2bit_LSB = B"00") then
---                        m0_core_next_state <= s_EXEC_INSTB;
---                    else
---                        m0_core_next_state <= s_PC_UNALIGNED;
---                    end if;
---                when s_EXEC_INSTB_INVALID => m0_core_next_state <= s_EXEC_INSTA_INVALID;
---                when s_PC_UNALIGNED => m0_core_next_state <= s_EXEC_INSTA;
---                when s_REFETCH_INSTB => m0_core_next_state <= s_EXEC_INSTA;
---                when s_REFETCH_INSTA => m0_core_next_state <= s_EXEC_INSTB;
---                when s_INSTA_MEM_ACCESS => m0_core_next_state <= s_INSTB_AFTER_MEM_ACCESS;
---                when s_INSTB_MEM_ACCESS => m0_core_next_state <= s_INSTA_AFTER_MEM_ACCESS;
---                when s_INSTA_AFTER_MEM_ACCESS => 
---                     if (PC_updated = '0') then
---                        core_inst_ptr <= core_inst_ptr + 1;
---                        if (use_PC_value = true) then  
---                             m0_core_next_state <= s_INSTA_MEM_ACCESS;
---                        else
---                             m0_core_next_state <= s_EXEC_INSTB;
---                        end if;          
---                    else 
---                        m0_core_next_state <= s_PC_UPDATED_INVALID;
---                    end if;    
---                when s_INSTB_AFTER_MEM_ACCESS =>
-                
---                    if (PC_updated = '0') then
---                        if (use_PC_value = true) then  
---                            m0_core_next_state <= s_INSTB_MEM_ACCESS;
---                        else
---                            core_inst_ptr <= core_inst_ptr + 1;
---                            m0_core_next_state <= s_EXEC_INSTA;
---                        end if; 
---                    else 
---                        m0_core_next_state <= s_PC_UPDATED_INVALID;
---                    end if;  
-                
---                     if (PC_updated = '0') then
---                        core_inst_ptr <= core_inst_ptr + 1;                    
---                        if (use_PC_value = true) then  
---                             m0_core_next_state <= s_INSTB_MEM_ACCESS;
---                        else
---                             m0_core_next_state <= s_EXEC_INSTA;
---                        end if; 
---                    else 
---                        m0_core_next_state <= s_PC_UPDATED_INVALID;
---                    end if;
---                when s_MEM_ACCESS => m0_core_next_state <= m0_core_state_after_mem_access;
                 when others => m0_core_next_state <= s_RESET;
             end case;
         end if;            
@@ -286,18 +192,7 @@ begin
             when s_PIPELINE_FLUSH3 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
                 gp_addrA_executor_ctrl <= false; 
              
-               
-                   
-                
---            when s_EXEC_INSTA_START =>  
---            when s_EXEC_INSTA => 
---            when s_EXEC_INSTB => 
---            when s_PC_UPDATED_INVALID => 
---            when s_EXEC_INSTA_INVALID => 
---            when s_EXEC_INSTB_INVALID =>
---            when s_PC_UNALIGNED =>
---            when s_REFETCH_INSTB =>
---            when s_REFETCH_INSTA => 
+
             when others =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= false; haddr_ctrl <= false;
                 gp_addrA_executor_ctrl <= false;
 
