@@ -622,6 +622,9 @@ begin
             when CMP_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LSLS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LSRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ASRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process;
@@ -821,6 +824,45 @@ begin
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
                     cortex_m0_opcode <= "TST  " & Rn_decode & "," & Rm_decode &  "      "; 
+               -------------------------------------------------------------------------------------- -- LSLS <Rd>,<Rm>,#<imm5>
+               elsif std_match(current_instruction(15 downto 11), "00000") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));  
+                    imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
+                    imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
+                    cortex_m0_opcode <= "LSLS " & Rd_decode & "," & Rm_decode & "," & imm8_decode & "  ";  
+                -------------------------------------------------------------------------------------- -- LSLS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100000010") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "LSLS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";  
+               -------------------------------------------------------------------------------------- -- LSRS <Rd>,<Rm>,#<imm5>
+               elsif std_match(current_instruction(15 downto 11), "00001") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));  
+                    imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
+                    imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
+                    cortex_m0_opcode <= "LSRS " & Rd_decode & "," & Rm_decode & "," & imm8_decode & "  ";  
+                -------------------------------------------------------------------------------------- -- LSRS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100000011") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "LSRS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";             
+               -------------------------------------------------------------------------------------- -- ASRS <Rd>,<Rm>,#<imm5>
+               elsif std_match(current_instruction(15 downto 11), "00010") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));  
+                    imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
+                    imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
+                    cortex_m0_opcode <= "ASRS " & Rd_decode & "," & Rm_decode & "," & imm8_decode & "  ";  
+                -------------------------------------------------------------------------------------- -- ASRS <Rdn>,<Rm>
+               elsif std_match(current_instruction(15 downto 6), "0100000100") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
+                    Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
+                    cortex_m0_opcode <= "ASRS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";             
                -------------------------------------------------------------------------------------- -- RORS <Rdn>,<Rm>
                elsif std_match(current_instruction(15 downto 6), "0100000111") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));

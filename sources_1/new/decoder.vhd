@@ -288,6 +288,57 @@ begin
                 execution_cmd <= TST;
                 destination_is_PC <= false;       
                 access_mem <= false;    
+            ----------------------------------------------------------------------------------- -- LSLS <Rd>,<Rm>,#<imm5>
+            elsif (std_match(opcode, "00000-")) then  
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3);             -- Rm
+                gp_addrB <= B"0000";
+                imm8 <= B"000" & instruction (10 downto 6);            -- imm5
+                execution_cmd <= LSLS_imm5;
+                destination_is_PC <= false;       
+                access_mem <= false;    
+            ----------------------------------------------------------------------------------- -- LSLS <Rdn>,<Rm>
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0010") then  
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
+                gp_addrA <= '0' & instruction (2 downto 0);             -- Rdn
+                gp_addrB <=  '0' & instruction (5 downto 3);            -- Rm
+                execution_cmd <= LSLS;
+                destination_is_PC <= false;       
+                access_mem <= false;    
+            ----------------------------------------------------------------------------------- -- LSRS <Rd>,<Rm>,#<imm5>
+            elsif (std_match(opcode, "00001-")) then  
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3);             -- Rm
+                gp_addrB <= B"0000";
+                imm8 <= B"000" & instruction (10 downto 6);            -- imm5
+                execution_cmd <= LSRS_imm5;
+                destination_is_PC <= false;       
+                access_mem <= false;    
+            ----------------------------------------------------------------------------------- -- LSRS <Rdn>,<Rm>
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0011") then  
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
+                gp_addrA <= '0' & instruction (2 downto 0);             -- Rdn
+                gp_addrB <=  '0' & instruction (5 downto 3);            -- Rm
+                execution_cmd <= LSRS;
+                destination_is_PC <= false;       
+                access_mem <= false;  
+            ----------------------------------------------------------------------------------- -- ASRS <Rd>,<Rm>,#<imm5>
+            elsif (std_match(opcode, "00010-")) then  
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
+                gp_addrA <= '0' & instruction (5 downto 3);             -- Rm
+                gp_addrB <= B"0000";
+                imm8 <= B"000" & instruction (10 downto 6);            -- imm5
+                execution_cmd <= ASRS_imm5;
+                destination_is_PC <= false;       
+                access_mem <= false;    
+            ----------------------------------------------------------------------------------- -- ASRS <Rdn>,<Rm>
+            elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0100") then  
+                gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
+                gp_addrA <= '0' & instruction (2 downto 0);             -- Rdn
+                gp_addrB <=  '0' & instruction (5 downto 3);            -- Rm
+                execution_cmd <= ASRS;
+                destination_is_PC <= false;       
+                access_mem <= false;      
             ----------------------------------------------------------------------------------- -- RORS <Rdn>,<Rm>
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0111") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
