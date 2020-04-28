@@ -621,7 +621,7 @@ begin
             when SUBS_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when CMP_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDR_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_label  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LSLS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LSRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when ASRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
@@ -869,7 +869,7 @@ begin
                     Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
                     cortex_m0_opcode <= "RORS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "   ";
-               -------------------------------------------------------------------------------------- -- LDR <Rt>, [<Rn>{,#<imm5>}]
+               -------------------------------------------------------------------------------------- -- LDR <Rt>,<label>
                elsif std_match(current_instruction(15 downto 11), "01001") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); --Rt 
                     imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));

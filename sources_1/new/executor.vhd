@@ -195,19 +195,14 @@ begin
                 mem_access <= false;
            
             ------------------------------------------------------------ --  LDR <Rt>, [<Rn>{,#<imm5>}]   
-            when LDR_imm5 =>                                               
-                WE_val <= '1';              
-                mux_ctrl <= B"11";          -- alu_result
-                set_flags <= false;
-                update_PC <= '0'; 
-                mem_access <= true;
             ------------------------------------------------------------ --  LDR <Rt>,<label>
-            when LDR_imm8 =>                                               
+            when LDR_imm5 | LDR_label  =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 update_PC <= '0'; 
                 mem_access <= true;
+            
             when NOP =>
                 WE_val <= '0';              
                 mux_ctrl <= B"11";          -- alu_result
@@ -226,7 +221,6 @@ begin
      end process;
      
     alu_p: process  (command, operand_A, operand_B, imm8_z_ext, mul_result, current_flags) 
-        variable  mul_result_for_LDR : std_logic_vector(63 downto 0);
     begin
     
         case (command) is
@@ -425,35 +419,14 @@ begin
                     alu_temp (32) <= alu_temp (31);                                    
                 end if;    
             -------------------------------------------------------------------------------------- --   LDR <Rt>, [<Rn>{,#<imm5>}]
-            when LDR_imm5 =>             
-                -- offset_addr = if add then (R[n] + imm32) else (R[n] - imm32);
-                -- address = if index then offset_addr else R[n];
-                -- R[t] = MemU[address,4];
-                alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used
-                --data_mem_addr <= unsigned (operand_B) + unsigned (imm8_z_ext);
             -------------------------------------------------------------------------------------- --   LDR <Rt>,<label>
-            when LDR_imm8 =>             
+            when LDR_imm5 | LDR_label =>             
                 -- offset_addr = if add then (R[n] + imm32) else (R[n] - imm32);
                 -- address = if index then offset_addr else R[n];
                 -- R[t] = MemU[address,4];
                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used
-                -- operand B holds the value of PC, the literal address follows this calculation:
-                -- imm8_z_ext holds the value of literal
-                -- aligned_PC = PC & 0xFFFF_FFFC
-                -- address = aligned_PC + (literal * 4) + 4
-                mul_result_for_LDR := std_logic_vector (unsigned (imm8_z_ext) * 4);
-                -- Check to see is LDR resides in odd memory location or even.
-                -- For odd case we don;t need to add 4
-                -- For even case plus 4 is needed.
-                --data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
---                if (state = s_INSTA_MEM_ACCESS) then
---                    data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0)) + 4;
---                elsif (state = s_INSTB_MEM_ACCESS) then
---                    data_mem_addr <= unsigned (operand_B and x"FFFF_FFFC") + unsigned (mul_result_for_LDR(31 downto 0));
---                else
---                    data_mem_addr <= (others => '0');
---                    report "Executor: In (LDR_imm8) an unknown core state encountered." severity error;  
---                end if;
+           
+             
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when NOP =>
                 alu_temp <= (others => '0');   

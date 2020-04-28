@@ -359,7 +359,7 @@ begin
             elsif (std_match(opcode, "01001-") ) then       
                 gp_WR_addr <= '0' & instruction (10 downto 8);           -- Rt
                 imm8 <= instruction (7 downto 0);                        -- imm8
-                execution_cmd <= LDR_imm8;
+                execution_cmd <= LDR_label;
                 destination_is_PC <= false;   
                 access_mem <= true;    
                 

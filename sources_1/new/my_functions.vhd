@@ -60,7 +60,7 @@ package helper_funcs is
         CMP, CMN, CMP_imm8,
         ANDS, EORS, ORRS, BICS, MVNS, TST,
         LSLS_imm5, LSLS, LSRS_imm5, LSRS, ASRS_imm5, ASRS, RORS,
-        LDR_imm5,LDR_imm8,
+        LDR_imm5, LDR_label,
         NOP,
         NOT_DEF
         );  
