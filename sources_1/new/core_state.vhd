@@ -152,13 +152,12 @@ begin
                     m0_core_next_state <= s_PIPELINE_FLUSH3;
                when s_PIPELINE_FLUSH3 =>   
                     m0_core_next_state <= s_RUN;
-               
-                when others => m0_core_next_state <= s_RESET;
+               when others => m0_core_next_state <= s_RESET;
             end case;
         end if;            
     end process;
 
-      output_p: process (m0_core_state, access_mem, PC(1)) begin
+    output_p: process (m0_core_state, access_mem, PC(1)) begin
         case (m0_core_state) is
             when s_RESET => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
                 gp_addrA_executor_ctrl <= false; 
