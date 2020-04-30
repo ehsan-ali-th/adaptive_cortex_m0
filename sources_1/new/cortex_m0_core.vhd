@@ -103,7 +103,8 @@ architecture Behavioral of cortex_m0_core is
         execution_cmd: out executor_cmds_t;
         access_mem: out boolean;
         use_base_register : out boolean;
-        mem_load_size : out mem_op_size_t
+        mem_load_size : out mem_op_size_t;
+        mem_load_sign_ext : out boolean
     );
     end component;
     
@@ -226,6 +227,9 @@ architecture Behavioral of cortex_m0_core is
 	signal use_base_register : boolean;	
 	signal mem_load_size : mem_op_size_t;	
 	signal mem_load_size_value : mem_op_size_t;	
+	signal mem_load_sign_ext : boolean;
+	signal mem_load_sign_ext_value : boolean;
+	
    
 
 
@@ -260,6 +264,7 @@ architecture Behavioral of cortex_m0_core is
     signal LDR_mul_result_value : unsigned (7 downto 0);
     signal LDR_multiplier : unsigned (7 downto 0);
     signal base_reg_content : std_logic_vector (31 downto 0);
+    signal mem_index_content : std_logic_vector (31 downto 0);
     signal forward_alu_result : boolean;
     
     
@@ -321,7 +326,8 @@ begin
         execution_cmd => command_value,
         access_mem => access_mem_value,
         use_base_register => use_base_register,
-        mem_load_size => mem_load_size_value
+        mem_load_size => mem_load_size_value,
+        mem_load_sign_ext => mem_load_sign_ext_value
         );
     
      m0_executor: executor port map (
@@ -433,7 +439,7 @@ begin
     ---------------------------------------------------------------------------------------
     
     hrdata_data_value_16_sized_p: process (hrdata_data_value, data_memory_addr_i(1)) begin
-        if (data_memory_addr_i(1) = '0') then
+        if (data_memory_addr_i(1) = '1') then
             hrdata_data_value_16_sized <= hrdata_data_value (31 downto 16);      -- High Half Word
         else
             hrdata_data_value_16_sized <= hrdata_data_value (15 downto 0);       -- Low Half Word
@@ -441,16 +447,31 @@ begin
     end process;
 
 
-    hrdata_data_value_sized_p: process (mem_load_size, hrdata_data_value, hrdata_data_value_16_sized, data_memory_addr_i(0)) begin
+    hrdata_data_value_sized_p: process (mem_load_size, mem_load_sign_ext, hrdata_data_value, hrdata_data_value_16_sized, data_memory_addr_i(1 downto 0)) 
+        variable case_sel: unsigned (1 downto 0);
+    begin
+        case_sel := data_memory_addr_i (1 downto 0);
         case (mem_load_size) is
             when WORD       => hrdata_data_value_sized <= hrdata_data_value;
-            when HALF_WORD  => hrdata_data_value_sized <= x"0000" & hrdata_data_value_16_sized;
-            when BYTE       => 
-                if (data_memory_addr_i(0) = '0') then
-                    hrdata_data_value_sized <=  x"0000_00" & hrdata_data_value_16_sized (7 downto 0);  
+            when HALF_WORD  => 
+                if (mem_load_sign_ext = true) then
+                    if (hrdata_data_value_16_sized(15) = '1') then
+                        hrdata_data_value_sized <= x"FFFF" & hrdata_data_value_16_sized;    -- negative sign extension
+                    else
+                        hrdata_data_value_sized <= x"0000" & hrdata_data_value_16_sized;
+                    end if;        
                 else
-                    hrdata_data_value_sized <=  x"0000_00" & hrdata_data_value_16_sized (15 downto 8);
+                    hrdata_data_value_sized <= x"0000" & hrdata_data_value_16_sized;
                 end if;
+            when BYTE       =>
+                case (case_sel) is
+                    when B"00" => hrdata_data_value_sized <=  x"0000_00" & hrdata_data_value (7 downto 0);
+                    when B"01" => hrdata_data_value_sized <=  x"0000_00" & hrdata_data_value (15 downto 8);
+                    when B"10" => hrdata_data_value_sized <=  x"0000_00" & hrdata_data_value (23 downto 16);
+                    when B"11" => hrdata_data_value_sized <=  x"0000_00" & hrdata_data_value (31 downto 24);
+                    when others =>
+                        null;
+                end case;   
             when NOT_DEF    => hrdata_data_value_sized <= hrdata_data_value;
         end case;
     end process;
@@ -499,6 +520,8 @@ begin
             when SUBS_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when CMP_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDRH_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDRB_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_label  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LSLS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LSRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
@@ -509,39 +532,64 @@ begin
     
     -- data_memory_addr_value
     ----------------------------------------------------------------------------------------  
-     LDR_multiplier_p: process (mem_load_size_value) begin
+    LDR_multiplier_p: process (mem_load_size_value) begin
          case (mem_load_size_value) is
-            when WORD       => LDR_multiplier <= x"04";
-            when HALF_WORD  => LDR_multiplier <= x"02";
-            when BYTE       => LDR_multiplier <= x"01";
-            when NOT_DEF    => LDR_multiplier <= x"04";
+            when WORD       => LDR_multiplier <= x"02";
+            when HALF_WORD  => LDR_multiplier <= x"01";
+            when BYTE       => LDR_multiplier <= x"00";
+            when NOT_DEF    => LDR_multiplier <= x"02";
         end case;
     end process;
     
-     
-    LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
+    LDR_mul_result_value_p: process (command_value, imm8, LDR_multiplier, mem_index_content(7 downto 0), PC_execute, LDR_mul_result_value) begin
+        case (command_value) is
+            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label => 
+                LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
+            when LDRH | LDRSH | LDRB =>
+                LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));     
+            when others =>
+                        null;    
+        end case;
+    end process; 
     
-    forward_alu_result_p: process (gp_WR_addr, gp_addrB_final) begin
-        if (gp_WR_addr = gp_addrB_final) then 
+    
+    forward_alu_result_p: process (gp_WR_addr, gp_addrB_final, gp_addrA_value) begin
+        if (gp_WR_addr = gp_addrB_final or gp_WR_addr = gp_addrA_value) then 
             forward_alu_result <= true;
         else
             forward_alu_result <= false;
         end if;   
     end process;
     
-    base_reg_content_p: process (forward_alu_result, gp_data_in, gp_ram_dataB) begin
+    base_reg_content_p: process (forward_alu_result, gp_data_in, gp_ram_dataB, gp_ram_dataA, gp_addrA_value) begin
         if (forward_alu_result = true) then 
-             base_reg_content <= gp_data_in;
+            if (gp_WR_addr = gp_addrA_value) then
+                mem_index_content <= gp_ram_dataB;  
+                base_reg_content <= gp_data_in;  
+            else
+                -- gp_WR_addr = gp_addrB_final 
+                mem_index_content <= gp_data_in;
+                base_reg_content <= gp_ram_dataA;    
+            end if;    
         else
-            base_reg_content <= gp_ram_dataB;
+            mem_index_content <= gp_ram_dataB;
+            base_reg_content <= gp_ram_dataA;
         end if;   
     end process;
     
-    data_memory_addr_value_p: process (PC_execute, base_reg_content, LDR_mul_result_value, use_base_register) begin
+    data_memory_addr_value_p: process (command_value, gp_ram_dataA, PC_execute, base_reg_content, LDR_mul_result_value, use_base_register) begin
         if (use_base_register = true) then 
-             data_memory_addr_i <= unsigned (base_reg_content and x"FFFF_FFFC") +  unsigned(x"0000_00" & LDR_mul_result_value) + x"0000_0004"; 
+             data_memory_addr_i <= unsigned (base_reg_content) +  unsigned(x"0000_00" & LDR_mul_result_value); 
         else
-             data_memory_addr_i <= unsigned (PC_execute and x"FFFF_FFFC") +  unsigned(x"0000_00" & LDR_mul_result_value) + x"0000_0004"; 
+            case (command_value) is
+                when LDR_label => 
+                    data_memory_addr_i <= unsigned (PC_execute and x"FFFF_FFFC") +  unsigned(x"0000_00" & LDR_mul_result_value) + x"0000_0004"; 
+                when LDRH | LDRSH | LDRB =>
+                    data_memory_addr_i <= unsigned (gp_ram_dataA) +  unsigned(x"0000_00" & LDR_mul_result_value);     
+                when others =>
+                        null;     
+            end case;
+             
         end if;   
     end process;
     
@@ -561,6 +609,7 @@ begin
             hrdata_progrm <= (others => '0');
             data_memory_addr <= (others => '0');
             LDR_mul_result <= (others => '0');
+            mem_load_sign_ext <= false;
         else
             if (rising_edge(HCLK)) then
                     imm8_z_ext <= imm8_z_ext_value;
@@ -571,6 +620,7 @@ begin
                     mem_load_size <= mem_load_size_value;
                     data_memory_addr <= data_memory_addr_value;
                     LDR_mul_result <= LDR_mul_result_value;
+                    mem_load_sign_ext <= mem_load_sign_ext_value;
                 if (disable_fetch = false) then
                     access_mem <= access_mem_value;
                     enable_execute <= enable_execute_value;
@@ -823,6 +873,24 @@ begin
                 imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
                 imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
                 cortex_m0_opcode <= "LDRB " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
+           -------------------------------------------------------------------------------------- -- LDRH <Rt>,[<Rn>,<Rm>]
+           elsif std_match(current_instruction(15 downto 9), "0101101") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "LDRH " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";                  
+           -------------------------------------------------------------------------------------- -- LDRSH <Rt>,[<Rn>,<Rm>]
+           elsif std_match(current_instruction(15 downto 9), "0101111") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "LDRSH" & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";                  
+           -------------------------------------------------------------------------------------- -- LDRB <Rt>,[<Rn>,<Rm>]
+           elsif std_match(current_instruction(15 downto 9), "0101110") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "LDRB " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";                  
               
            end if;
         end if;

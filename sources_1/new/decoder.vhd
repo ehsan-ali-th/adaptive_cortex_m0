@@ -46,7 +46,8 @@ entity decoder is
         execution_cmd : out executor_cmds_t;
         access_mem : out boolean;
         use_base_register : out boolean;
-        mem_load_size : out mem_op_size_t
+        mem_load_size : out mem_op_size_t;
+        mem_load_sign_ext : out boolean
     );
 end decoder;
 
@@ -80,6 +81,7 @@ begin
                access_mem <= false;    
                use_base_register <= false;   
                mem_load_size <= NOT_DEF;
+               mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- MOVS <Rd>,<Rm> 
             elsif (std_match(opcode, "000000") and instruction(9 downto 6) = "0000") then         
                 gp_WR_addr <= '0' & instruction (2 downto 0); -- Rd 
@@ -91,7 +93,8 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
-      ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
+                mem_load_sign_ext <= false;
+            ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
             elsif (std_match(opcode, "010001") and instruction(9 downto 8) = "10") then         
                 gp_WR_addr <= instruction(7) & instruction (2 downto 0);    -- Rd
                 gp_addrA <= instruction (6 downto 3);                       -- Rn
@@ -106,7 +109,8 @@ begin
                 use_base_register <= false;   
                 access_mem <= false;    
                 mem_load_size <= NOT_DEF;
-     ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>   
+                mem_load_sign_ext <= false;
+            ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>   
             elsif (std_match(opcode, "000111") and instruction(9) = '0') then                   
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
                 gp_addrA <= '0' & instruction (5 downto 3);             -- Rn 
@@ -117,6 +121,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,<Rm>   
             elsif (std_match(opcode, "000110") and instruction(9) = '0') then                   
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -127,6 +132,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- ADD <Rdn>,<Rm> - ADD PC,<Rm>   
             elsif (std_match(opcode, "010001") and instruction(9 downto 8) = B"00") then        
                 gp_WR_addr <= instruction(7) & instruction (2 downto 0);    -- Rdn
@@ -142,6 +148,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- ADDS <Rdn>,#<imm8>   
             elsif (std_match(opcode, "00110-")) then                                            
                 gp_WR_addr <= '0' & instruction (10 downto 8);          -- Rdn
@@ -153,6 +160,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- ADCS <Rdn>,<Rm>   
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0101") then      
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
@@ -163,6 +171,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>   
             elsif (std_match(opcode, "000110") and instruction(9) = '1') then                   
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -173,6 +182,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>   
             elsif (std_match(opcode, "000111") and instruction(9) = '1') then                   
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -184,6 +194,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- SUBS <Rdn>,#<imm8> 
             elsif (std_match(opcode, "00111-")) then                                              
                 gp_WR_addr <= '0' & instruction (10 downto 8);          -- Rdn
@@ -195,6 +206,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- SBCS <Rdn>,<Rm>   
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0110") then        
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
@@ -205,6 +217,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- RSBS <Rd>,<Rn>,#0   
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1001") then        
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -215,6 +228,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>    
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1101") then        
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdm
@@ -225,6 +239,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>   T1  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1010") then        
                 gp_addrA <= '0' & instruction (2 downto 0);             -- Rn
@@ -234,6 +249,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>   T2  
             elsif (std_match(opcode, "010001") and instruction(9 downto 8) = B"01") then        
                 gp_addrA <= instruction(7) & instruction (2 downto 0);  -- Rn
@@ -243,6 +259,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- CMN <Rn>,<Rm>     
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1011") then        
                 gp_addrA <= '0' & instruction (2 downto 0);             -- Rn
@@ -252,6 +269,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- CMP <Rn>,#<imm8>     
             elsif (std_match(opcode, "00101-")) then        
                 gp_addrA <= '0' & instruction (10 downto 8);             -- Rn
@@ -262,6 +280,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- ANDS <Rdn>,<Rm>    
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0000") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
@@ -272,6 +291,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- EORS <Rdn>,<Rm>  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0001") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
@@ -282,6 +302,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- ORRS <Rdn>,<Rm>  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1100") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
@@ -292,6 +313,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- BICS <Rdn>,<Rm>  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1110") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
@@ -302,6 +324,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- MVNS <Rd>,<Rm>  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1111") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
@@ -312,6 +335,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- TST <Rn>,<Rm>  
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"1000") then       
                 gp_addrA <= '0' & instruction (2 downto 0);              -- Rn
@@ -321,6 +345,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LSLS <Rd>,<Rm>,#<imm5>
             elsif (std_match(opcode, "00000-")) then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -332,6 +357,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LSLS <Rdn>,<Rm>
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0010") then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
@@ -342,6 +368,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LSRS <Rd>,<Rm>,#<imm5>
             elsif (std_match(opcode, "00001-")) then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -353,6 +380,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LSRS <Rdn>,<Rm>
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0011") then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
@@ -363,6 +391,7 @@ begin
                 access_mem <= false;  
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
          ----------------------------------------------------------------------------------- -- ASRS <Rd>,<Rm>,#<imm5>
             elsif (std_match(opcode, "00010-")) then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -374,6 +403,7 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
         ----------------------------------------------------------------------------------- -- ASRS <Rdn>,<Rm>
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0100") then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rdn
@@ -384,6 +414,7 @@ begin
                 access_mem <= false;      
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
         ----------------------------------------------------------------------------------- -- RORS <Rdn>,<Rm>
             elsif (std_match(opcode, "010000") and instruction(9 downto 6) = B"0111") then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
@@ -394,39 +425,43 @@ begin
                 access_mem <= false;    
                 use_base_register <= false;   
                 mem_load_size <= NOT_DEF;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LDR <Rt>, [<Rn>{,#<imm5>}]
             elsif (std_match(opcode, "01101-") ) then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt
-                gp_addrA <= B"0000";
-                gp_addrB <= '0' & instruction (5 downto 3);              -- Rn
+                gp_addrA <=  '0' & instruction (5 downto 3);             -- Rn
+                gp_addrB <= B"0000";
                 imm8 <= B"000" & instruction (10 downto 6);              -- imm5
                 execution_cmd <= LDR_imm5;
                 destination_is_PC <= false;    
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= WORD;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LDRH <Rt>,[<Rn>{,#<imm5>}]
             elsif (std_match(opcode, "10001-") ) then      
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt    
-                gp_addrA <= B"0000";
-                gp_addrB <= '0' & instruction (5 downto 3);              -- Rn
+                gp_addrA <=  '0' & instruction (5 downto 3);             -- Rn
+                gp_addrB <= B"0000";
                 imm8 <= B"000" & instruction (10 downto 6);              -- imm5
                 execution_cmd <= LDRH_imm5;
                 destination_is_PC <= false;    
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= HALF_WORD;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LDRB <Rt>,[<Rn>{,#<imm5>}]
             elsif (std_match(opcode, "01111-")) then  
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt     
-                gp_addrA <= B"0000";
-                gp_addrB <= '0' & instruction (5 downto 3);              -- Rn
+                gp_addrA <=  '0' & instruction (5 downto 3);             -- Rn
+                gp_addrB <= B"0000";
                 imm8 <= B"000" & instruction (10 downto 6);              -- imm5
                 execution_cmd <= LDRB_imm5;
                 destination_is_PC <= false;    
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= BYTE;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LDR <Rt>,<label>
             elsif (std_match(opcode, "01001-") ) then       
                 gp_WR_addr <= '0' & instruction (10 downto 8);           -- Rt
@@ -438,6 +473,7 @@ begin
                 access_mem <= true;    
                 use_base_register <= false;   
                 mem_load_size <= WORD;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LDRH <Rt>,[<Rn>,<Rm>]
             elsif (std_match(opcode, "010110") and instruction(9) = '1') then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt
@@ -449,6 +485,7 @@ begin
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= HALF_WORD;
+                mem_load_sign_ext <= false;
             ----------------------------------------------------------------------------------- -- LDRSH <Rt>,[<Rn>,<Rm>]
             elsif (std_match(opcode, "010111") and instruction(9) = '1') then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt
@@ -460,6 +497,7 @@ begin
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= HALF_WORD;
+                mem_load_sign_ext <= true;
             ----------------------------------------------------------------------------------- -- LDRB <Rt>,[<Rn>,<Rm>]
             elsif (std_match(opcode, "010111") and instruction(9) = '0')  then       
                 gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt
@@ -471,6 +509,9 @@ begin
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= BYTE;
+                mem_load_sign_ext <= false;
+            else
+                null;    
             end if;   
     end process;
 
