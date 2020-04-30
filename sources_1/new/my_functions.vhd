@@ -24,7 +24,7 @@ use IEEE.STD_LOGIC_1164.ALL;
 
 -- Uncomment the following library declaration if using
 -- arithmetic functions with Signed or Unsigned values
---use IEEE.NUMERIC_STD.ALL;
+use IEEE.NUMERIC_STD.ALL;
 
 -- Uncomment the following library declaration if instantiating
 -- any Xilinx leaf cells in this code.
@@ -32,11 +32,13 @@ use IEEE.STD_LOGIC_1164.ALL;
 --use UNISIM.VComponents.all;
 
 package helper_funcs is
+    -- general
     function conv_to_string ( a: std_logic_vector) return string;
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     function to_std_logic (in_bit: bit) return std_logic;
     function to_std_logic (in_bit: boolean) return std_logic;
 
+ 
 
     type core_state_t is (
         s_RESET, 
@@ -60,10 +62,21 @@ package helper_funcs is
         CMP, CMN, CMP_imm8,
         ANDS, EORS, ORRS, BICS, MVNS, TST,
         LSLS_imm5, LSLS, LSRS_imm5, LSRS, ASRS_imm5, ASRS, RORS,
-        LDR_imm5, LDR_label,
+        LDR_imm5, LDRH_imm5, LDRB_imm5, LDR_label, LDRH, LDRSH, LDRB,
         NOP,
         NOT_DEF
         );  
+        
+   type mem_op_size_t is (
+        WORD,               -- 4
+        HALF_WORD,          -- 2
+        BYTE,               -- 1
+        NOT_DEF
+   );    
+   
+   
+  
+  
         
     type flag_t is record 
         N  : bit;                              -- Negative    
@@ -73,6 +86,11 @@ package helper_funcs is
         EN : bit_vector (5 downto 0);          -- Exception Number.
         T  : bit;                              -- Thumb code is executed.
     end record;        
+    
+    -- Cortex-M0 functions
+    function IsAligned (
+        address : in std_logic_vector (31 downto 0);
+        size : in integer) return boolean;
 
 end  helper_funcs;
 
@@ -131,15 +149,41 @@ package body helper_funcs is
   end function;
   
     function to_std_logic (in_bit: boolean) return std_logic is
-    variable  ret : std_logic;
-  begin
-    if (in_bit = false) then
-        ret := '0';
-    else
-        ret := '1';
-    end if;   
-     return ret; 
-  end function;
-
+        variable  ret : std_logic;
+     begin
+        if (in_bit = false) then
+            ret := '0';
+         else
+            ret := '1';
+        end if;   
+        return ret; 
+    end function;
+  
+    function IsAligned ( address : in std_logic_vector (31 downto 0);
+                         size : in integer) return boolean is
+        variable ret : boolean;
+        begin
+        
+        assert (size = 1 or size = 2 or size = 4) report "Memory address size is wrong." severity failure;
+       
+       case (size) is
+        when 1 => ret := true;
+        when 2 => 
+            if (address (0) = '0') then
+                ret := true;
+            else
+                ret := false;
+            end if;
+       when 4 =>  
+            if (address (1 downto 0) = B"00") then
+                ret := true;
+            else
+                ret := false;
+            end if;   
+        when others => ret := false;
+       end case;
+       
+       return ret; 
+    end function;
 
 end  helper_funcs;
