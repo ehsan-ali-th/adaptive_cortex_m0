@@ -41,30 +41,52 @@ entity core_state is
         instruction_size : in boolean;      -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
         access_mem : in boolean;
         PC_updated : in boolean;
+        imm8 : in std_logic_vector (7 downto 0);
+        number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
+        execution_cmd : in executor_cmds_t;
+        LDM_access_mem : in boolean;
         new_PC : in std_logic_vector (31 downto 0);
         PC : out std_logic_vector (31 downto 0);
         PC_decode : out std_logic_vector (31 downto 0);
         PC_execute :  out std_logic_vector (31 downto 0);
         PC_after_execute :  out std_logic_vector (31 downto 0);
-        execute_mem_rw : out boolean;
+        LDM_mem_address_index :  out unsigned (4 downto 0);             -- Because max no. of LDM registers is 7 so the range: 7 * 4 => 28 
+        gp_data_in_ctrl : out gp_data_in_ctrl_t;
         disable_fetch : out boolean;
-        haddr_ctrl : out boolean;               -- true  = put data memory address on the bus, 
-                                                -- false = put program memory address on the bus
+        haddr_ctrl : out haddr_ctrl_t;                      -- true  = put data memory address on the bus, 
+                                                            -- false = put program memory address on the bus
         disable_executor : out boolean;
-        gp_addrA_executor_ctrl : out boolean
+        gp_addrA_executor_ctrl : out boolean;
+        LDM_W_reg : out std_logic_vector (3 downto 0)
+        
           
     );
 end core_state;
 
 architecture Behavioral of core_state is
 
+   
+    
+    
     signal m0_core_state :  core_state_t;
     signal m0_core_next_state :  core_state_t;
     signal size_of_executed_instruction : unsigned (31 downto 0);
     signal PC_value :  unsigned(31 downto 0);
 	signal refetch_i : boolean;
+	
+   
+   
+    signal LDM_counter : unsigned (3 downto 0);          -- Starts with the total number of target registers 
+    signal LDM_counter_value : unsigned (3 downto 0);      
+    signal LDM_read_counter : unsigned (4 downto 0);    -- Starts with 0 and counts uo to the max no. of target registers
+    signal LDM_cur_target_reg : low_register_t;
             
 begin
+
+   
+        
+    LDM_mem_address_index <=  shift_left (LDM_read_counter, 2);   --    LDM_read_counter * 4
+    
 
     PC_p: process (clk, reset) begin
         if (reset = '1') then
@@ -103,12 +125,30 @@ begin
     state_p: process (clk) begin
         if (reset = '1') then
              m0_core_state <= s_RESET;
+             LDM_counter <= (others => '0');
+             LDM_read_counter <= (others => '0');
         else
             if (rising_edge(clk)) then
                   m0_core_state <= m0_core_next_state;
+                  LDM_counter <= LDM_counter_value;
+                  if (m0_core_state = s_RUN) then
+                    LDM_read_counter <= (others => '0');  
+                  elsif (LDM_access_mem = true) then
+                    LDM_read_counter <= LDM_read_counter + 1;        
+                  end if;
             end if;                       
         end if;
     end process;
+    
+--    LDM_counter_p: process (clk) begin
+--        if (rising_edge(clk)) then
+--            if (m0_core_state = s_RUN and LDM_access_mem) then
+--                LDM_counter <= B"00000";
+--            elsif (m0_core_state = s_DATA_MEM_ACCESS_LDM) then
+--                 LDM_counter <= LDM_counter + 1;    
+--            end if;
+--        end if;
+--    end process;
 
     size_of_executed_instruction_p: process (instruction_size) begin
         -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
@@ -118,8 +158,34 @@ begin
             size_of_executed_instruction <= x"0000_0002";
         end if;
     end process;
+    
+   LDM_counter_value_p: process (m0_core_state, number_of_ones_initial, LDM_counter) begin
+        if (m0_core_state = s_RUN) then
+            LDM_counter_value <= "0000";
+        elsif (m0_core_state = s_DATA_MEM_ACCESS_LDM) then  
+            LDM_counter_value <= unsigned(number_of_ones_initial);
+        else    
+            LDM_counter_value <=  unsigned(LDM_counter) - 1;  
+        end if;    
+    end process;
+    
+   
+    
+    LDM_W_reg_p: process (LDM_cur_target_reg) begin
+        case (LDM_cur_target_reg) is
+            when R0 => LDM_W_reg <= "0000";
+            when R1 => LDM_W_reg <= "0001";
+            when R2 => LDM_W_reg <= "0010";
+            when R3 => LDM_W_reg <= "0011";
+            when R4 => LDM_W_reg <= "0100";
+            when R5 => LDM_W_reg <= "0101";
+            when R6 => LDM_W_reg <= "0110";
+            when R7 => LDM_W_reg <= "0111";
+            when others => LDM_W_reg <= "0000";
+        end case;   
+    end process;
      
-    next_state_p: process (m0_core_state, reset, access_mem, PC_updated) begin
+    next_state_p: process (m0_core_state, reset, access_mem, PC_updated, execution_cmd, LDM_counter, LDM_read_counter) begin
         if (reset = '1') then
              m0_core_next_state <= s_RESET;
         else     
@@ -130,7 +196,11 @@ begin
                 when s_RUN =>  
                     -- CHECK if instruction needs memory access
                     if (access_mem = true) then 
-                        m0_core_next_state <= s_DATA_MEM_ACCESS;
+                        if (execution_cmd = LDM) then
+                            m0_core_next_state <= s_DATA_MEM_ACCESS_LDM;
+                        else
+                            m0_core_next_state <= s_DATA_MEM_ACCESS;
+                        end if;    
                     -- CHECK if instruction updates PC
                     elsif (PC_updated = true) then
                        m0_core_next_state <= s_PC_UPDATED;
@@ -152,48 +222,433 @@ begin
                     m0_core_next_state <= s_PIPELINE_FLUSH3;
                when s_PIPELINE_FLUSH3 =>   
                     m0_core_next_state <= s_RUN;
+               when s_DATA_MEM_ACCESS_LDM =>
+                    if    (imm8(0) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
+                    elsif (imm8(1) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                    elsif (imm8(2) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                    elsif (imm8(3) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                    elsif (imm8(4) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                    elsif (imm8(5) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                    elsif (imm8(6) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                    elsif (imm8(7) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                    else
+                        m0_core_next_state <= s_RUN;    
+                    end if;  
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(2) = '1') then   
+                            m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(5) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(6) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                        elsif (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;  
+                        end if;  
+                    end if;                       
+               when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(2) = '1') then   
+                            m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(5) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(6) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                        elsif (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;  
+                        end if;  
+                    end if;    
+               when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(5) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(6) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                        elsif (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;       
+                        end if;  
+                    end if;    
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(5) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(6) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                        elsif (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;       
+                        end if;  
+                    end if;   
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(5) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(6) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                        elsif (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;       
+                        end if;  
+                    end if;
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(6) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
+                        elsif (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;       
+                        end if;  
+                    end if; 
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= s_RUN;
+                    else
+                        if (imm8(7) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        else
+                             m0_core_next_state <= s_RUN;       
+                        end if;  
+                    end if; 
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
+                    m0_core_next_state <= s_RUN;
+                                                                                                                                       
                when others => m0_core_next_state <= s_RESET;
             end case;
         end if;            
     end process;
 
-    output_p: process (m0_core_state, access_mem, PC(1)) begin
+    output_p: process (m0_core_state, access_mem, PC(1), LDM_counter, LDM_counter_value, LDM_read_counter, LDM_access_mem, imm8) begin
         case (m0_core_state) is
-            when s_RESET => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+            when s_RESET => 
+                refetch_i <= false; 
+                gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false; 
-            when s_RESET1 => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
-                gp_addrA_executor_ctrl <= false;
-            when s_RESET2 => refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false; 
-                gp_addrA_executor_ctrl <= false;
- 
-           -- when s_START_DELAY_CYCLE => enable_decode <= '0'; enable_execute <= '0';
-            when s_RUN =>  refetch_i <= access_mem; execute_mem_rw <= false;  disable_executor <= false; haddr_ctrl <= false;
+                LDM_cur_target_reg <= NONE;
+            when s_RESET1 => 
+                refetch_i <= false; 
+                gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false;
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC; 
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+            when s_RESET2 => 
+                refetch_i <= false; 
+                gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC; 
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+            when s_RUN =>  
+                refetch_i <= access_mem; 
+                gp_data_in_ctrl <= ALU_RESULT; 
+                disable_executor <= false; 
+                if (LDM_access_mem = true) then
+                    haddr_ctrl <= sel_LDM;
+                    LDM_cur_target_reg <= set_LDM_target_reg (imm8); 
+                else
+                    haddr_ctrl <= sel_PC;
+                end if;    
                 disable_fetch <= access_mem;
+                gp_addrA_executor_ctrl <= false; 
+             when s_DATA_MEM_ACCESS =>  
+                refetch_i <= false; 
+                gp_data_in_ctrl <= ALU_RESULT; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_DATA;
+                if (PC(1) = '1') then
+                    disable_fetch <= false;
+                else
+                    disable_fetch <= access_mem;
+                end if;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+            when s_EXECUTE_DATA_MEM_RW =>  
+                refetch_i <= access_mem; 
+                gp_data_in_ctrl <= HRDATA_VALUE_SIZED; 
+                disable_executor <= false; 
+                haddr_ctrl <= sel_PC;
+                disable_fetch <= access_mem;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+            when s_PC_UPDATED =>  
+                refetch_i <= false; 
+                 gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false;
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC;
+                gp_addrA_executor_ctrl <= true; 
+                LDM_cur_target_reg <= NONE;
+            when s_PIPELINE_FLUSH1 =>  
+                refetch_i <= false; 
+                 gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false; 
+                disable_executor <= true;
+                haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false;
- 
-            when s_DATA_MEM_ACCESS =>  refetch_i <= false; execute_mem_rw <= false;  disable_executor <= true; haddr_ctrl <= true;
+                LDM_cur_target_reg <= NONE;
+            when s_PIPELINE_FLUSH2 =>  
+                refetch_i <= false; 
+                 gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+            when s_PIPELINE_FLUSH3 =>  
+                refetch_i <= false; 
+                 gp_data_in_ctrl <= ALU_RESULT; 
+                disable_fetch <= false; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+            when s_DATA_MEM_ACCESS_LDM =>
+                if (LDM_counter_value = 1) then
+                    -- it means the LDM instruction has only 1 register in its register_list
+                    -- therefor we have to finish the LDM in next cycle.
+                    disable_fetch <= false;
+                    refetch_i <= false;
+                else
+                    refetch_i <= true;
+                    disable_fetch <= true;
+                end if;
+                gp_data_in_ctrl <= LDM_Rn; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_LDM;
+               
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8);   
+                if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then     -- two states before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC;
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 1) & "0");   
+                 if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                 elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= access_mem;
-                    end if;
-                    gp_addrA_executor_ctrl <= false;
-            when s_EXECUTE_DATA_MEM_RW =>  refetch_i <= access_mem; execute_mem_rw <= true; disable_executor <= false; haddr_ctrl <= false;
-                   disable_fetch <= access_mem;
-                   gp_addrA_executor_ctrl <= false;
-                   
-            when s_PC_UPDATED =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
-                gp_addrA_executor_ctrl <= true; 
-            when s_PIPELINE_FLUSH1 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                 else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
-            when s_PIPELINE_FLUSH2 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 2) & "00");   
+                if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
-            when s_PIPELINE_FLUSH3 =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= true; haddr_ctrl <= false;
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 3) & "000");  
+                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 4) & "0000");   
+                 if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 5) & "00000");   
+                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
-             
-
-            when others =>  refetch_i <= false; execute_mem_rw <= false; disable_fetch <= false; disable_executor <= false; haddr_ctrl <= false;
-                gp_addrA_executor_ctrl <= false;
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 6) & "000000");   
+                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
+                LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 7) & "0000000");  
+                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                    refetch_i <= false; 
+                    disable_fetch <= false; 
+                    haddr_ctrl <= sel_PC; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= LDM_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+                
+              
+                
+            when others => 
+                refetch_i <= false; 
+                gp_data_in_ctrl <= ALU_RESULT;  
+                disable_fetch <= false; 
+                disable_executor <= false; 
+                haddr_ctrl <= sel_PC;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
 
         end case;
     end process;       
