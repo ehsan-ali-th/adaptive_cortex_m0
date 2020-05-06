@@ -57,25 +57,17 @@ entity core_state is
                                                             -- false = put program memory address on the bus
         disable_executor : out boolean;
         gp_addrA_executor_ctrl : out boolean;
-        LDM_W_reg : out std_logic_vector (3 downto 0)
-        
-          
+        LDM_W_reg : out std_logic_vector (3 downto 0);
+        LDM_capture_base : out boolean
     );
 end core_state;
-
+    
 architecture Behavioral of core_state is
-
-   
-    
-    
     signal m0_core_state :  core_state_t;
     signal m0_core_next_state :  core_state_t;
     signal size_of_executed_instruction : unsigned (31 downto 0);
     signal PC_value :  unsigned(31 downto 0);
 	signal refetch_i : boolean;
-	
-   
-   
     signal LDM_counter : unsigned (3 downto 0);          -- Starts with the total number of target registers 
     signal LDM_counter_value : unsigned (3 downto 0);      
     signal LDM_read_counter : unsigned (4 downto 0);    -- Starts with 0 and counts uo to the max no. of target registers
@@ -83,10 +75,7 @@ architecture Behavioral of core_state is
             
 begin
 
-   
-        
     LDM_mem_address_index <=  shift_left (LDM_read_counter, 2);   --    LDM_read_counter * 4
-    
 
     PC_p: process (clk, reset) begin
         if (reset = '1') then
@@ -121,7 +110,6 @@ begin
         end if; 
     end process;
 
-   
     state_p: process (clk) begin
         if (reset = '1') then
              m0_core_state <= s_RESET;
@@ -140,16 +128,6 @@ begin
         end if;
     end process;
     
---    LDM_counter_p: process (clk) begin
---        if (rising_edge(clk)) then
---            if (m0_core_state = s_RUN and LDM_access_mem) then
---                LDM_counter <= B"00000";
---            elsif (m0_core_state = s_DATA_MEM_ACCESS_LDM) then
---                 LDM_counter <= LDM_counter + 1;    
---            end if;
---        end if;
---    end process;
-
     size_of_executed_instruction_p: process (instruction_size) begin
         -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
         if (instruction_size = true) then
@@ -168,8 +146,6 @@ begin
             LDM_counter_value <=  unsigned(LDM_counter) - 1;  
         end if;    
     end process;
-    
-   
     
     LDM_W_reg_p: process (LDM_cur_target_reg) begin
         case (LDM_cur_target_reg) is
@@ -377,6 +353,7 @@ begin
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_RESET1 => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -385,6 +362,7 @@ begin
                 haddr_ctrl <= sel_PC; 
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_RESET2 => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -393,6 +371,7 @@ begin
                 haddr_ctrl <= sel_PC; 
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_RUN =>  
                 refetch_i <= access_mem; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -405,6 +384,7 @@ begin
                 end if;    
                 disable_fetch <= access_mem;
                 gp_addrA_executor_ctrl <= false; 
+                LDM_capture_base <= false; 
              when s_DATA_MEM_ACCESS =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -417,6 +397,7 @@ begin
                 end if;
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_EXECUTE_DATA_MEM_RW =>  
                 refetch_i <= access_mem; 
                 gp_data_in_ctrl <= HRDATA_VALUE_SIZED; 
@@ -425,6 +406,7 @@ begin
                 disable_fetch <= access_mem;
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_PC_UPDATED =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -433,6 +415,7 @@ begin
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= true; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_PIPELINE_FLUSH1 =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -441,6 +424,7 @@ begin
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false;
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_PIPELINE_FLUSH2 =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -449,6 +433,7 @@ begin
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_PIPELINE_FLUSH3 =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -457,7 +442,9 @@ begin
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
             when s_DATA_MEM_ACCESS_LDM =>
+                LDM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
                     -- it means the LDM instruction has only 1 register in its register_list
                     -- therefor we have to finish the LDM in next cycle.
@@ -475,6 +462,7 @@ begin
                 LDM_cur_target_reg <= NONE;
              when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8);   
+                LDM_capture_base <= false; 
                 if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
@@ -493,6 +481,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 1) & "0");   
+                LDM_capture_base <= false; 
                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
@@ -514,6 +503,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 2) & "00");   
+                LDM_capture_base <= false; 
                 if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
@@ -535,6 +525,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 3) & "000");  
+                LDM_capture_base <= false; 
                   if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
@@ -556,6 +547,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 4) & "0000");   
+                LDM_capture_base <= false; 
                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
@@ -577,7 +569,8 @@ begin
                 gp_addrA_executor_ctrl <= false;  
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 5) & "00000");   
-                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                LDM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
                     haddr_ctrl <= sel_PC; 
@@ -598,6 +591,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 6) & "000000");   
+                LDM_capture_base <= false; 
                   if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
@@ -619,7 +613,8 @@ begin
                 gp_addrA_executor_ctrl <= false; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 7) & "0000000");  
-                  if (LDM_counter = 1) then         -- one state before the end of LDM is over
+                LDM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= false; 
                     disable_fetch <= false; 
                     haddr_ctrl <= sel_PC; 
@@ -639,23 +634,16 @@ begin
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
                 
-              
-                
             when others => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT;  
                 disable_fetch <= false; 
                 disable_executor <= false; 
                 haddr_ctrl <= sel_PC;
-                gp_addrA_executor_ctrl <= false; 
+                gp_addrA_executor_ctrl <= false;
+                LDM_capture_base <= false; 
                 LDM_cur_target_reg <= NONE;
 
         end case;
     end process;       
-    
-  
-
---    state <= m0_core_state;
---    next_state <= m0_core_next_state;
-
-end Behavioral;
+ end Behavioral;

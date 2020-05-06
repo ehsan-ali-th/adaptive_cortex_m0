@@ -153,7 +153,8 @@ architecture Behavioral of cortex_m0_core is
             haddr_ctrl : out haddr_ctrl_t; 
             disable_executor : out boolean;
             gp_addrA_executor_ctrl : out boolean;
-            LDM_W_reg : out std_logic_vector (3 downto 0)
+            LDM_W_reg : out std_logic_vector (3 downto 0);
+            LDM_capture_base : out boolean
             
         );
     end component;
@@ -268,12 +269,14 @@ architecture Behavioral of cortex_m0_core is
     signal disable_executor : boolean;
     signal gp_addrA_executor_ctrl : boolean;
     signal LDM_W_reg :std_logic_vector (3 downto 0);
+    signal LDM_capture_base : boolean;
    
     signal data_memory_addr_i : unsigned (31 downto 0);
     signal LDR_mul_result : unsigned (7 downto 0);
     signal LDR_mul_result_value : unsigned (7 downto 0);
     signal LDR_multiplier : unsigned (7 downto 0);
     signal base_reg_content : std_logic_vector (31 downto 0);
+    signal base_reg_content_LDM : std_logic_vector (31 downto 0);
     signal mem_index_content : std_logic_vector (31 downto 0);
     signal forward_alu_result : boolean;
   
@@ -380,7 +383,8 @@ begin
             haddr_ctrl => haddr_ctrl,
             disable_executor => disable_executor,
             gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
-            LDM_W_reg => LDM_W_reg
+            LDM_W_reg => LDM_W_reg,
+            LDM_capture_base => LDM_capture_base
         ); 
         
      m0_core_flags: status_flags port map (
@@ -413,7 +417,7 @@ begin
         end case;
     end process;   
    
-   LDM_mem_addr <= (unsigned (gp_ram_dataA) + LDM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
+   LDM_mem_addr <= (unsigned (base_reg_content_LDM) + LDM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
     
     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -650,6 +654,15 @@ begin
             base_reg_content <= gp_ram_dataA;
         end if;   
     end process;
+    
+    base_reg_content_LDM_p: process (LDM_capture_base, gp_ram_dataA) begin
+        if (LDM_capture_base = true) then
+            base_reg_content_LDM <= gp_ram_dataA;
+       
+        end if;   
+    end process;
+    
+    
     
     data_memory_addr_value_p: process (command_value, gp_ram_dataA, PC_execute, base_reg_content, 
                                        LDR_mul_result_value, use_base_register) begin

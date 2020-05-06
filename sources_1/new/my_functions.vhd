@@ -79,28 +79,28 @@ package helper_funcs is
         NOT_DEF
         );  
         
-   type mem_op_size_t is (
+    type mem_op_size_t is (
         WORD,               -- 4
         HALF_WORD,          -- 2
         BYTE,               -- 1
         NOT_DEF
-   );   
+    );   
    
     type haddr_ctrl_t is (
         sel_PC,                 -- Put PC on the HADDR bus
         sel_DATA,               -- Put data_memory_addr on the HADDR bus
         sel_LDM                 -- Put data_memory_addr_i (base_reg_content) on the HADDR bus
         
-   );   
+    );   
    
-   type gp_data_in_ctrl_t is (
+    type gp_data_in_ctrl_t is (
         ALU_RESULT,
         HRDATA_VALUE_SIZED,
         LDM_DATA,
         LDM_Rn
-   );  
-   
-  type low_register_t is (
+    );  
+
+    type low_register_t is (
         R0, 
         R1, 
         R2, 
@@ -111,11 +111,7 @@ package helper_funcs is
         R7,
         NONE 
    );   
-   
-   
-  
-  
-        
+ 
     type flag_t is record 
         N  : bit;                              -- Negative    
         Z  : bit;                              -- Zero 
