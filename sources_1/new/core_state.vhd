@@ -46,6 +46,7 @@ entity core_state is
         execution_cmd : in executor_cmds_t;
         LDM_access_mem : in boolean;
         new_PC : in std_logic_vector (31 downto 0);
+        access_mem_mode : in access_mem_mode_t;
         PC : out std_logic_vector (31 downto 0);
         PC_decode : out std_logic_vector (31 downto 0);
         PC_execute :  out std_logic_vector (31 downto 0);
@@ -58,7 +59,8 @@ entity core_state is
         disable_executor : out boolean;
         gp_addrA_executor_ctrl : out boolean;
         LDM_W_reg : out std_logic_vector (3 downto 0);
-        LDM_capture_base : out boolean
+        LDM_capture_base : out boolean;
+        HWRITE : out std_logic
     );
 end core_state;
     
@@ -172,21 +174,39 @@ begin
                 when s_RUN =>  
                     -- CHECK if instruction needs memory access
                     if (access_mem = true) then 
-                        if (execution_cmd = LDM) then
-                            m0_core_next_state <= s_DATA_MEM_ACCESS_LDM;
-                        else
-                            m0_core_next_state <= s_DATA_MEM_ACCESS;
-                        end if;    
-                    -- CHECK if instruction updates PC
+                        if (access_mem_mode = MEM_ACCESS_READ) then 
+                            if (execution_cmd = LDM) then
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_LDM;
+                            else
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_R;
+                            end if;  
+                        elsif (access_mem_mode = MEM_ACCESS_WRITE) then
+                            if (execution_cmd = STM) then
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_STM;
+                            else
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_W;
+                            end if; 
+                        else 
+                            -- access_mem_mode = MEM_ACCESS_NONE
+                        
+                        end if;      
+                        -- CHECK if instruction updates PC
                     elsif (PC_updated = true) then
                        m0_core_next_state <= s_PC_UPDATED;
                     else    
                         m0_core_next_state <= s_RUN;     
                     end if;    
-                when s_DATA_MEM_ACCESS => m0_core_next_state <= s_EXECUTE_DATA_MEM_RW; 
-                when s_EXECUTE_DATA_MEM_RW =>
+                when s_DATA_MEM_ACCESS_R => m0_core_next_state <= s_EXECUTE_DATA_MEM_R; 
+                when s_EXECUTE_DATA_MEM_R =>
                     if (access_mem = true) then 
-                        m0_core_next_state <= s_DATA_MEM_ACCESS;
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_R;
+                    else    
+                        m0_core_next_state <= s_RUN;     
+                    end if; 
+               when s_DATA_MEM_ACCESS_W => m0_core_next_state <= s_EXECUTE_DATA_MEM_W; 
+               when s_EXECUTE_DATA_MEM_W =>
+                    if (access_mem = true) then 
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_W;
                     else    
                         m0_core_next_state <= s_RUN;     
                     end if; 
@@ -354,6 +374,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_RESET1 => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -363,6 +384,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_RESET2 => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -372,6 +394,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_RUN =>  
                 refetch_i <= access_mem; 
                 gp_data_in_ctrl <= ALU_RESULT; 
@@ -385,7 +408,8 @@ begin
                 disable_fetch <= access_mem;
                 gp_addrA_executor_ctrl <= false; 
                 LDM_capture_base <= false; 
-             when s_DATA_MEM_ACCESS =>  
+                HWRITE <= '0'; 
+             when s_DATA_MEM_ACCESS_R =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT; 
                 disable_executor <= true; 
@@ -398,7 +422,8 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
-            when s_EXECUTE_DATA_MEM_RW =>  
+                HWRITE <= '0'; 
+            when s_EXECUTE_DATA_MEM_R =>  
                 refetch_i <= access_mem; 
                 gp_data_in_ctrl <= HRDATA_VALUE_SIZED; 
                 disable_executor <= false; 
@@ -407,6 +432,31 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
+             when s_DATA_MEM_ACCESS_W =>  
+                refetch_i <= false; 
+                gp_data_in_ctrl <= ALU_RESULT; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_WDATA;
+                if (PC(1) = '1') then
+                    disable_fetch <= false;
+                else
+                    disable_fetch <= access_mem;
+                end if;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
+                HWRITE <= '1'; 
+            when s_EXECUTE_DATA_MEM_W =>  
+                refetch_i <= access_mem; 
+                gp_data_in_ctrl <= HRDATA_VALUE_SIZED; 
+                disable_executor <= false; 
+                haddr_ctrl <= sel_PC;
+                disable_fetch <= access_mem;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= NONE;
+                LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_PC_UPDATED =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -416,6 +466,7 @@ begin
                 gp_addrA_executor_ctrl <= true; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_PIPELINE_FLUSH1 =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -425,6 +476,7 @@ begin
                 gp_addrA_executor_ctrl <= false;
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_PIPELINE_FLUSH2 =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -434,6 +486,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_PIPELINE_FLUSH3 =>  
                 refetch_i <= false; 
                  gp_data_in_ctrl <= ALU_RESULT; 
@@ -443,6 +496,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_capture_base <= false; 
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_LDM =>
                 LDM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
@@ -457,9 +511,9 @@ begin
                 gp_data_in_ctrl <= LDM_Rn; 
                 disable_executor <= true; 
                 haddr_ctrl <= sel_LDM;
-               
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
+                HWRITE <= '0'; 
              when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8);   
                 LDM_capture_base <= false; 
@@ -479,6 +533,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 1) & "0");   
                 LDM_capture_base <= false; 
@@ -501,6 +556,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 2) & "00");   
                 LDM_capture_base <= false; 
@@ -523,6 +579,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 3) & "000");  
                 LDM_capture_base <= false; 
@@ -545,6 +602,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 4) & "0000");   
                 LDM_capture_base <= false; 
@@ -567,6 +625,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 5) & "00000");   
                 LDM_capture_base <= false; 
@@ -589,6 +648,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 6) & "000000");   
                 LDM_capture_base <= false; 
@@ -611,6 +671,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 7) & "0000000");  
                 LDM_capture_base <= false; 
@@ -633,7 +694,7 @@ begin
                 gp_data_in_ctrl <= LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
-                
+                HWRITE <= '0'; 
             when others => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= ALU_RESULT;  
@@ -643,6 +704,7 @@ begin
                 gp_addrA_executor_ctrl <= false;
                 LDM_capture_base <= false; 
                 LDM_cur_target_reg <= NONE;
+                HWRITE <= '0'; 
 
         end case;
     end process;       

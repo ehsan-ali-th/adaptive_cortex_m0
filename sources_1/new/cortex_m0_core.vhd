@@ -105,7 +105,8 @@ architecture Behavioral of cortex_m0_core is
         use_base_register : out boolean;
         mem_load_size : out mem_op_size_t;
         mem_load_sign_ext : out boolean;
-        LDM_access_mem : out boolean
+        LDM_access_mem : out boolean;
+        access_mem_mode : out access_mem_mode_t
     );
     end component;
     
@@ -143,6 +144,7 @@ architecture Behavioral of cortex_m0_core is
             execution_cmd : in executor_cmds_t;
             LDM_access_mem : in boolean;
             new_PC : in std_logic_vector (31 downto 0);
+            access_mem_mode : IN access_mem_mode_t;
             PC : out std_logic_vector(31 downto 0);
             PC_decode : out std_logic_vector (31 downto 0);
             PC_execute :  out std_logic_vector (31 downto 0);
@@ -154,8 +156,8 @@ architecture Behavioral of cortex_m0_core is
             disable_executor : out boolean;
             gp_addrA_executor_ctrl : out boolean;
             LDM_W_reg : out std_logic_vector (3 downto 0);
-            LDM_capture_base : out boolean
-            
+            LDM_capture_base : out boolean;
+            HWRITE : out std_logic
         );
     end component;
     
@@ -227,9 +229,7 @@ architecture Behavioral of cortex_m0_core is
 	signal gp_ram_dataB : std_logic_vector(31 downto 0);	
 	signal gp_addrA_executor : std_logic_vector(31 downto 0);	
 	signal gp_data_in : std_logic_vector(31 downto 0);	
-    signal enable_execute : std_logic;
-	signal enable_execute_value : std_logic;
-    
+   
     -- decoder signals
     signal imm8 : std_logic_vector (7 downto 0);
 	signal WE : std_logic;	
@@ -244,6 +244,8 @@ architecture Behavioral of cortex_m0_core is
 	signal mem_load_sign_ext_value : boolean;
 	signal LDM_access_mem : boolean;
 	signal LDM_access_mem_value : boolean;
+	signal access_mem_mode : access_mem_mode_t;
+	
 
 	-- executor signals
     signal command:  executor_cmds_t := NOT_DEF;
@@ -270,6 +272,7 @@ architecture Behavioral of cortex_m0_core is
     signal gp_addrA_executor_ctrl : boolean;
     signal LDM_W_reg :std_logic_vector (3 downto 0);
     signal LDM_capture_base : boolean;
+    
    
     signal data_memory_addr_i : unsigned (31 downto 0);
     signal LDR_mul_result : unsigned (7 downto 0);
@@ -339,7 +342,8 @@ begin
         use_base_register => use_base_register,
         mem_load_size => mem_load_size_value,
         mem_load_sign_ext => mem_load_sign_ext_value,
-        LDM_access_mem => LDM_access_mem_value
+        LDM_access_mem => LDM_access_mem_value,
+        access_mem_mode => access_mem_mode
         );
     
      m0_executor: executor port map (
@@ -363,39 +367,41 @@ begin
          );
          
       m0_core_state_m: core_state port map (
-            clk => HCLK,
-            reset => internal_reset,
-            instruction_size => instruction_size,
-            access_mem => access_mem_value,
-            PC_updated => PC_updated,
-            imm8 => imm8_z_ext(7 downto 0),
-            number_of_ones_initial => number_of_ones_initial,
-            execution_cmd => command_value,
-            LDM_access_mem => LDM_access_mem,
-            new_PC => result, 
-            PC => PC,
-            PC_decode => PC_decode,
-            PC_execute => PC_execute,
-            PC_after_execute => PC_after_execute,
-            LDM_mem_address_index => LDM_mem_address_index,
-            gp_data_in_ctrl => gp_data_in_ctrl,
-            disable_fetch => disable_fetch,
-            haddr_ctrl => haddr_ctrl,
-            disable_executor => disable_executor,
-            gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
-            LDM_W_reg => LDM_W_reg,
-            LDM_capture_base => LDM_capture_base
+        clk => HCLK,
+        reset => internal_reset,
+        instruction_size => instruction_size,
+        access_mem => access_mem_value,
+        PC_updated => PC_updated,
+        imm8 => imm8_z_ext(7 downto 0),
+        number_of_ones_initial => number_of_ones_initial,
+        execution_cmd => command_value,
+        LDM_access_mem => LDM_access_mem,
+        new_PC => result, 
+        access_mem_mode => access_mem_mode,
+        PC => PC,
+        PC_decode => PC_decode,
+        PC_execute => PC_execute,
+        PC_after_execute => PC_after_execute,
+        LDM_mem_address_index => LDM_mem_address_index,
+        gp_data_in_ctrl => gp_data_in_ctrl,
+        disable_fetch => disable_fetch,
+        haddr_ctrl => haddr_ctrl,
+        disable_executor => disable_executor,
+        gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
+        LDM_W_reg => LDM_W_reg,
+        LDM_capture_base => LDM_capture_base,
+        HWRITE => HWRITE
         ); 
         
      m0_core_flags: status_flags port map (
-            clk => HCLK,
-            reset => internal_reset,
-            result => result,
-            C_in => alu_temp_32,
-            cmd => cmd_out,
-            set_flags => set_flags,
-            overflow_status => overflow_status,
-            flags_o  => flags
+        clk => HCLK,
+        reset => internal_reset,
+        result => result,
+        C_in => alu_temp_32,
+        cmd => cmd_out,
+        set_flags => set_flags,
+        overflow_status => overflow_status,
+        flags_o  => flags
         );
         
      m0_count_ones: count_ones port map ( 
@@ -409,11 +415,12 @@ begin
     --- Hardware which drives (Cortex-M0) module input/ouput pins
     ---------------------------------------------------------------------------------------    
         
-    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, PC(31 downto 2), LDM_mem_addr) begin
+    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_mem_addr) begin
         case (haddr_ctrl) is
             when sel_PC     =>  HADDR <= PC(31 downto 2) & B"00";  
             when sel_DATA   =>  HADDR <= data_memory_addr;
             when sel_LDM    =>  HADDR <= std_logic_vector (LDM_mem_addr);
+            when sel_WDATA  =>  HADDR <= std_logic_vector (data_memory_addr_i);
         end case;
     end process;   
    
@@ -431,9 +438,7 @@ begin
     HPROT <= B"0000";
     HSIZE <= "000";
     HTRANS <= B"00";
-    HWDATA <= (others => '0');
-    HWRITE <= '0';
-    
+    HWDATA <= gp_ram_dataB;
         
     ---------------------------------------------------------------------------------------
     --- Hardware which drives (Executor) module input pins
@@ -588,20 +593,25 @@ begin
     
     imm8_z_ext_value_p: process  (command_value, imm8) begin
         case (command_value) is
-            when MOVS_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when ADDS_imm3  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when ADDS_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when SUBS_imm3  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when SUBS_imm8  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when CMP_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDR_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDRH_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDRB_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDR_label  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LSLS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LSRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when ASRS_imm5  => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDM        => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when MOVS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADDS_imm3   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADDS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUBS_imm3   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUBS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when CMP_imm8    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LSLS_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LSRS_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ASRS_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_imm5    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDRH_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDRB_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_label   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDM         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STR_imm5    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STRH_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STRB_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STR_SP_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STM         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process; 
@@ -620,9 +630,9 @@ begin
     LDR_mul_result_value_p: process (command_value, imm8, LDR_multiplier, mem_index_content(7 downto 0), 
                                      PC_execute, LDR_mul_result_value) begin
         case (command_value) is
-            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label => 
+            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5  => 
                 LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
-            when LDRH | LDRSH | LDRB | LDRSB =>
+            when LDR | LDRH | LDRSH | LDRB | LDRSB =>
                 LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));     
             when others =>
                         null;    
@@ -662,8 +672,6 @@ begin
         end if;   
     end process;
     
-    
-    
     data_memory_addr_value_p: process (command_value, gp_ram_dataA, PC_execute, base_reg_content, 
                                        LDR_mul_result_value, use_base_register) begin
         if (use_base_register = true) then 
@@ -677,7 +685,7 @@ begin
                 when LDR_label => 
                     data_memory_addr_i <= unsigned (PC_execute and x"FFFF_FFFC") +  
                                           unsigned(x"0000_00" & LDR_mul_result_value) + x"0000_0004"; 
-                when LDRH | LDRSH | LDRB =>
+                when LDR| LDRH | LDRSH | LDRB =>
                     data_memory_addr_i <= unsigned (gp_ram_dataA) +  unsigned(x"0000_00" & LDR_mul_result_value);     
                 when others =>
                         null;     
@@ -697,7 +705,6 @@ begin
             gp_addrB <= (others => '0');
             command <= NOP;    
             access_mem <= false;
-            enable_execute <= '0';
             hrdata_data <= (others => '0');
             hrdata_progrm <= (others => '0');
             data_memory_addr <= (others => '0');
@@ -718,7 +725,6 @@ begin
                     LDM_access_mem <= LDM_access_mem_value;
                 if (disable_fetch = false) then
                     access_mem <= access_mem_value;
-                    enable_execute <= enable_execute_value;
                     hrdata_data <= hrdata_data_value; 
                     hrdata_progrm <= hrdata_progrm_value;
                 end if;  
@@ -941,33 +947,33 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0));
                 Rm_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3));    
                 cortex_m0_opcode <= "RORS " & Rd_decode & "," & Rn_decode & "," & Rm_decode & "    ";
-           -------------------------------------------------------------------------------------- -- LDR <Rt>,<label>
-           elsif std_match(current_instruction(15 downto 11), "01001") then                
-                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); --Rt 
-                imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
-                imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
-                cortex_m0_opcode <= "LDR  " & Rd_decode & ",[pc," & imm8_decode & "] ";    
-           -------------------------------------------------------------------------------------- -- LDR <Rt>, [<Rn>{,#<imm5>}]
-           elsif std_match(current_instruction(15 downto 11), "01101") then                
+          -------------------------------------------------------------------------------------- -- LDR <Rt>, [<Rn>{,#<imm5>}]
+          elsif std_match(current_instruction(15 downto 11), "01101") then                
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
                 imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
                 imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
                 cortex_m0_opcode <= "LDR  " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
-           -------------------------------------------------------------------------------------- -- LDRH <Rt>, [<Rn>{,#<imm5>}]
-           elsif std_match(current_instruction(15 downto 11), "10001") then                
+          -------------------------------------------------------------------------------------- -- LDRH <Rt>, [<Rn>{,#<imm5>}]
+          elsif std_match(current_instruction(15 downto 11), "10001") then                
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
                 imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
                 imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
                 cortex_m0_opcode <= "LDRH " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
-           -------------------------------------------------------------------------------------- -- LDRB <Rt>, [<Rn>{,#<imm5>}]
-           elsif std_match(current_instruction(15 downto 11), "01111") then                
+          -------------------------------------------------------------------------------------- -- LDRB <Rt>, [<Rn>{,#<imm5>}]
+          elsif std_match(current_instruction(15 downto 11), "01111") then                
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
                 imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
                 imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
                 cortex_m0_opcode <= "LDRB " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
+          -------------------------------------------------------------------------------------- -- LDR <Rt>,[<Rn>,<Rm>]
+          elsif std_match(current_instruction(15 downto 9), "0101100") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "LDR  " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  "; 
            -------------------------------------------------------------------------------------- -- LDRH <Rt>,[<Rn>,<Rm>]
            elsif std_match(current_instruction(15 downto 9), "0101101") then                
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
@@ -986,12 +992,70 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
                 Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
                 cortex_m0_opcode <= "LDRB " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";      
+           -------------------------------------------------------------------------------------- -- LDR <Rt>,<label>
+           elsif std_match(current_instruction(15 downto 11), "01001") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); --Rt 
+                imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
+                imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
+                cortex_m0_opcode <= "LDR  " & Rd_decode & ",[pc," & imm8_decode & "] ";    
            ------------------------------------------------------------------------------------- -- LDM <Rn>!,<registers>
            elsif std_match(current_instruction(15 downto 11), "11001") then                
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); -- Rn 
                 imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                 imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));  
-                cortex_m0_opcode <= "LDM " & Rd_decode & ",{" & imm8_decode & "}"  & "     ";                  
+                cortex_m0_opcode <= "LDM " & Rd_decode & ",{" & imm8_decode & "}"  & "     ";   
+             
+           -------------------------------------------------------------------------------------- -- STR <Rt>, [<Rn>{,#<imm5>}]
+           elsif std_match(current_instruction(15 downto 11), "01100") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
+                imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
+                cortex_m0_opcode <= "STR  " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
+           -------------------------------------------------------------------------------------- -- STRH <Rt>, [<Rn>{,#<imm5>}]
+           elsif std_match(current_instruction(15 downto 11), "10000") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
+                imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
+                cortex_m0_opcode <= "STRH " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
+           -------------------------------------------------------------------------------------- -- STRB <Rt>, [<Rn>{,#<imm5>}]
+           elsif std_match(current_instruction(15 downto 11), "01110") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                imm8_decode(2) :=  hexcharacter ("000" & current_instruction (10));
+                imm8_decode(3) :=  hexcharacter (current_instruction (9 downto 6));  
+                cortex_m0_opcode <= "STRB " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
+            -------------------------------------------------------------------------------------- -- STR <Rt>,[<Rn>,<Rm>]
+           elsif std_match(current_instruction(15 downto 9), "0101000") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "STR  " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";     
+           -------------------------------------------------------------------------------------- -- STRH <Rt>,[<Rn>,<Rm>]
+           elsif std_match(current_instruction(15 downto 9), "0101001") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "STRH " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";                  
+           -------------------------------------------------------------------------------------- -- STRB <Rt>,[<Rn>,<Rm>]
+           elsif std_match(current_instruction(15 downto 9), "0101010") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
+                cortex_m0_opcode <= "STRB " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";     
+           -------------------------------------------------------------------------------------- -- STR <Rt>,[SP,#<imm8>]   
+           elsif std_match(current_instruction(15 downto 11), "10010") then                
+                Rd_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); --Rt 
+                imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
+                imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));
+                cortex_m0_opcode <= "STR  " & Rd_decode & ",[sp," & imm8_decode & "] ";      
+           ------------------------------------------------------------------------------------- -- STM <Rn>!,<registers>
+           elsif std_match(current_instruction(15 downto 11), "11000") then                
+                Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); -- Rn 
+                imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
+                imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));  
+                cortex_m0_opcode <= "STM " & Rd_decode & ",{" & imm8_decode & "}"  & "     ";                                   
               
            end if;
         end if;

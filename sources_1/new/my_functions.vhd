@@ -46,13 +46,16 @@ package helper_funcs is
         s_RESET1, 
         s_RESET2, 
         s_RUN,
-        s_DATA_MEM_ACCESS,
-        s_EXECUTE_DATA_MEM_RW,
+        s_DATA_MEM_ACCESS_R,
+        s_DATA_MEM_ACCESS_W,
+        s_EXECUTE_DATA_MEM_R,
+        s_EXECUTE_DATA_MEM_W,
         s_PC_UPDATED,
         s_PIPELINE_FLUSH1,
         s_PIPELINE_FLUSH2,
         s_PIPELINE_FLUSH3,
         s_DATA_MEM_ACCESS_LDM,
+        s_DATA_MEM_ACCESS_STM,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R0,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R1,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R2,
@@ -73,8 +76,10 @@ package helper_funcs is
         ANDS, EORS, ORRS, BICS, MVNS, TST,
         RORS,
         LSLS_imm5, LSLS, LSRS_imm5, LSRS, ASRS_imm5, ASRS,
-        LDR_imm5, LDRH_imm5, LDRB_imm5, LDRH, LDRSH, LDRB, 
-        LDRSB, LDR_label, LDM,
+        LDR_imm5, LDRH_imm5, LDRB_imm5, LDR, LDRH, LDRSH, LDRB, 
+        LDRSB, LDR_label,   LDM,
+        STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
+               STR_SP_imm8, STM,
         NOP,
         NOT_DEF
         );  
@@ -89,8 +94,8 @@ package helper_funcs is
     type haddr_ctrl_t is (
         sel_PC,                 -- Put PC on the HADDR bus
         sel_DATA,               -- Put data_memory_addr on the HADDR bus
-        sel_LDM                 -- Put data_memory_addr_i (base_reg_content) on the HADDR bus
-        
+        sel_LDM,                -- Put data_memory_addr_i (base_reg_content) on the HADDR bus
+        sel_WDATA               -- Put data on the HADDR to be written into memory
     );   
    
     type gp_data_in_ctrl_t is (
@@ -110,6 +115,12 @@ package helper_funcs is
         R6, 
         R7,
         NONE 
+   );   
+   
+   type access_mem_mode_t is (
+        MEM_ACCESS_READ, 
+        MEM_ACCESS_WRITE, 
+        MEM_ACCESS_NONE
    );   
  
     type flag_t is record 

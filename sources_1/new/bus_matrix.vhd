@@ -123,7 +123,19 @@ begin
         else
             code_bram_WEA <= "0"; data_bram_WEA <= "0"; 
         end if;    
-       end process;   
+    end process;   
+    
+    DINA_p: process (cortex_m0_HWDATA, HSEL_code_bram, HSEL_data_bram) 
+        variable mux_sel : std_logic_vector (1 downto 0);
+    begin
+        mux_sel := HSEL_code_bram & HSEL_data_bram;
+        case (mux_sel) is
+            when "10"   => code_bram_DINA <= cortex_m0_HWDATA;
+            when "01"   => data_bram_DINA <= cortex_m0_HWDATA;
+            when others => null;
+        end case;
+    end process;   
+    
     code_bram_ADDRA (14 downto 13) <= "00";
     data_bram_ADDRA (14 downto 13) <= "00";
     code_bram_ADDRA (12 downto 0) <= cortex_m0_HADDR (14 downto 2);              -- Word Size (32-bit) read 
