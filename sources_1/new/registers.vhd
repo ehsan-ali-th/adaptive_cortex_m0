@@ -40,8 +40,10 @@ entity registers is
         gp_WR_addr: in std_logic_vector(3 downto 0);
         gp_addrA: in std_logic_vector(3 downto 0);
         gp_addrB: in std_logic_vector(3 downto 0);
+        gp_addrC: in std_logic_vector(3 downto 0);
         gp_ram_dataA : out std_logic_vector(31 downto 0);
-        gp_ram_dataB : out std_logic_vector(31 downto 0)
+        gp_ram_dataB : out std_logic_vector(31 downto 0);
+        gp_ram_dataC : out std_logic_vector(31 downto 0)
     );
 end registers;
 
@@ -60,7 +62,9 @@ architecture Behavioral of registers is
             ADDRA: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');
             DOA: out std_logic_vector (DATA_WIDTH-1 downto 0);
             ADDRB: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');
-            DOB: out std_logic_vector (DATA_WIDTH-1 downto 0) 
+            DOB: out std_logic_vector (DATA_WIDTH-1 downto 0);
+            ADDRC: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address C
+            DOC: out std_logic_vector (DATA_WIDTH-1 downto 0)   
         );
     end component;
     
@@ -80,7 +84,9 @@ begin
             ADDRA => gp_addrA,
             DOA => gp_ram_dataA,   
             ADDRB => gp_addrB,
-            DOB => gp_ram_dataB   
+            DOB => gp_ram_dataB, 
+            ADDRC => gp_addrC,
+            DOC => gp_ram_dataC   
         );
         
 end Behavioral;

@@ -43,7 +43,9 @@ entity ram is
         ADDRA: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address A
         DOA: out std_logic_vector (DATA_WIDTH-1 downto 0);
         ADDRB: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address B
-        DOB: out std_logic_vector (DATA_WIDTH-1 downto 0)  
+        DOB: out std_logic_vector (DATA_WIDTH-1 downto 0);  
+        ADDRC: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address C
+        DOC: out std_logic_vector (DATA_WIDTH-1 downto 0)  
     );
 end ram;
 
@@ -75,5 +77,6 @@ begin
 
             DOA <= ram_s(to_integer(unsigned(ADDRA)));
             DOB <= ram_s(to_integer(unsigned(ADDRB)));
+            DOC <= ram_s(to_integer(unsigned(ADDRC)));
 
 end Behavioral;

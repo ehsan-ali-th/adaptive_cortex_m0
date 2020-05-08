@@ -86,8 +86,10 @@ architecture Behavioral of cortex_m0_core is
         gp_data_in : in std_logic_vector(31 downto 0);
         gp_addrA: in std_logic_vector(3 downto 0);
         gp_addrB: in std_logic_vector(3 downto 0);
+        gp_addrC: in std_logic_vector(3 downto 0);
         gp_ram_dataA : out std_logic_vector(31 downto 0);
-        gp_ram_dataB : out std_logic_vector(31 downto 0)
+        gp_ram_dataB : out std_logic_vector(31 downto 0);
+        gp_ram_dataC : out std_logic_vector(31 downto 0)
     );
     end component;
     
@@ -99,6 +101,7 @@ architecture Behavioral of cortex_m0_core is
         gp_WR_addr : out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrA: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
+        gp_addrC : out std_logic_vector (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
         execution_cmd: out executor_cmds_t;
         access_mem: out boolean;
@@ -222,11 +225,14 @@ architecture Behavioral of cortex_m0_core is
 	signal gp_WR_addr_final : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_addrA : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_addrB : std_logic_vector(3 downto 0) := (others => '0');			
+	signal gp_addrC : std_logic_vector(3 downto 0) := (others => '0');			
 	signal gp_addrA_value : std_logic_vector(3 downto 0);			
 	signal gp_addrB_value : std_logic_vector(3 downto 0);			
+	signal gp_addrC_value : std_logic_vector(3 downto 0);			
 	signal gp_addrB_final : std_logic_vector(3 downto 0);			
 	signal gp_ram_dataA : std_logic_vector(31 downto 0);			
 	signal gp_ram_dataB : std_logic_vector(31 downto 0);	
+	signal gp_ram_dataC : std_logic_vector(31 downto 0);	
 	signal gp_addrA_executor : std_logic_vector(31 downto 0);	
 	signal gp_data_in : std_logic_vector(31 downto 0);	
    
@@ -325,8 +331,10 @@ begin
         gp_data_in => gp_data_in,
         gp_addrA => gp_addrA,
         gp_addrB => gp_addrB_final,
+        gp_addrC => gp_addrC, 
         gp_ram_dataA => gp_ram_dataA,
-        gp_ram_dataB => gp_ram_dataB
+        gp_ram_dataB => gp_ram_dataB,
+        gp_ram_dataC => gp_ram_dataC
     );
     
     m0_decoder: decoder port map ( 
@@ -336,6 +344,7 @@ begin
         gp_WR_addr => gp_WR_addr_value,
         gp_addrA => gp_addrA_value,
         gp_addrB => gp_addrB_value,
+        gp_addrC => gp_addrC_value,
         imm8 => imm8,
         execution_cmd => command_value,
         access_mem => access_mem_value,
@@ -642,14 +651,29 @@ begin
     end process;
     
     LDR_mul_result_value_p: process (command_value, imm8, LDR_multiplier, mem_index_content(7 downto 0), 
-                                     PC_execute, LDR_mul_result_value) begin
+                                     PC_execute, LDR_mul_result_value) 
+        --variable calc_index : unsigned (7 downto 0);        -- Calculate index by dividing : Word: divide by 4, HWord: divide by 2, Byte: no change                             
+                                     begin
         case (command_value) is
             when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5 | STRH_imm5 | STRB_imm5  => 
                 LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
             when LDR | LDRH | LDRSH | LDRB | LDRSB =>
                 LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));     
+            when STR =>
+                --calc_index := shift_right (unsigned (mem_index_content(7 downto 0)), 2); -- Divide by 4
+                --LDR_mul_result_value <= shift_left (calc_index, to_integer(LDR_multiplier));  
+                LDR_mul_result_value <=  unsigned (mem_index_content(7 downto 0));  
+            when STRH =>
+                --calc_index := shift_right (unsigned (mem_index_content(7 downto 0)), 1); -- Divide by 2
+                --LDR_mul_result_value <= shift_left (calc_index, to_integer(LDR_multiplier));    
+                LDR_mul_result_value <=  unsigned (mem_index_content(7 downto 0));  
+            when STRB =>
+                -- No change
+                --LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));   
+                LDR_mul_result_value <=  unsigned (mem_index_content(7 downto 0));  
+
             when others =>
-                        null;    
+                null;    
         end case;
     end process; 
     
@@ -663,18 +687,29 @@ begin
     end process;
     
     base_reg_content_p: process (forward_alu_result, gp_data_in, gp_ram_dataB, 
-                                 gp_ram_dataA, gp_addrA_value) begin
+                                 gp_ram_dataA, gp_ram_dataC, gp_addrA_value, command_value) begin
         if (forward_alu_result = true) then 
             if (gp_WR_addr = gp_addrA_value) then
-                mem_index_content <= gp_ram_dataB;  
+                if (command_value = STR or command_value = STRH or command_value = STRB) then
+                    mem_index_content <= gp_ram_dataC; 
+                else
+                    mem_index_content <= gp_ram_dataB; 
+                end if;     
                 base_reg_content <= gp_data_in;  
             else
-                -- gp_WR_addr = gp_addrB_final 
-                mem_index_content <= gp_data_in;
+                if (command_value = STR or command_value = STRH or command_value = STRB) then
+                    mem_index_content <= gp_ram_dataC;
+                else
+                    mem_index_content <= gp_data_in;
+                end if;
                 base_reg_content <= gp_ram_dataA;    
             end if;    
         else
-            mem_index_content <= gp_ram_dataB;
+            if (command_value = STR or command_value = STRH or command_value = STRB) then
+                mem_index_content <= gp_ram_dataC;
+            else
+                mem_index_content <= gp_ram_dataB;
+            end if;    
             base_reg_content <= gp_ram_dataA;
         end if;   
     end process;
@@ -699,7 +734,7 @@ begin
                 when LDR_label => 
                     data_memory_addr_i <= unsigned (PC_execute and x"FFFF_FFFC") +  
                                           unsigned(x"0000_00" & LDR_mul_result_value) + x"0000_0004"; 
-                when LDR| LDRH | LDRSH | LDRB =>
+                when LDR| LDRH | LDRSH | LDRB | STR | STRH |STRB =>
                     data_memory_addr_i <= unsigned (gp_ram_dataA) +  unsigned(x"0000_00" & LDR_mul_result_value);     
                 when others =>
                         null;     
@@ -717,6 +752,7 @@ begin
             gp_WR_addr <= (others => '0');
             gp_addrA <= (others => '0');
             gp_addrB <= (others => '0');
+            gp_addrC <= (others => '0');
             command <= NOP;    
             access_mem <= false;
             hrdata_data <= (others => '0');
@@ -731,6 +767,7 @@ begin
                     gp_WR_addr <= gp_WR_addr_value;
                     gp_addrA <= gp_addrA_value;
                     gp_addrB <= gp_addrB_value;
+                    gp_addrC <= gp_addrC_value;
                     command <= command_value;
                     mem_load_size <= mem_load_size_value;
                     data_memory_addr <= data_memory_addr_value;
