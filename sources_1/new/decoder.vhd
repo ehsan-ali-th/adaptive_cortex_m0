@@ -627,10 +627,10 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
             ----------------------------------------------------------------------------------- -- STR <Rt>, [<Rn>{,#<imm5>}]
             elsif (std_match(opcode, "01100-") ) then       
-                gp_WR_addr <=  B"0000";                                  -- Will not be used '0' 
+                gp_WR_addr <= B"0000";                                  -- Will not be used '0' 
                 gp_addrA <= '0' & instruction (5 downto 3);             -- Rn (base)
                 gp_addrB <= '0' & instruction (2 downto 0);             -- Rt (target)
-                imm8 <= B"000" & instruction (10 downto 6);              -- imm5 (index)
+                imm8 <= B"000" & instruction (10 downto 6);             -- imm5 (index)
                 execution_cmd <= STR_imm5;
                 destination_is_PC <= false;    
                 access_mem <= true;    
@@ -641,10 +641,10 @@ begin
                 access_mem_mode <= MEM_ACCESS_WRITE;
             ----------------------------------------------------------------------------------- -- STRH <Rt>,[<Rn>{,#<imm5>}]
             elsif (std_match(opcode, "10000-") ) then      
-                gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt    
-                gp_addrA <=  '0' & instruction (5 downto 3);             -- Rn
-                gp_addrB <= B"0000";
-                imm8 <= B"000" & instruction (10 downto 6);              -- imm5
+                gp_WR_addr <= B"0000";                                   -- Will not be used '0' 
+                gp_addrA <= '0' & instruction (5 downto 3);              -- Rn (base)
+                gp_addrB <= '0' & instruction (2 downto 0);              -- Rt (target)
+                imm8 <= B"000" & instruction (10 downto 6);              -- imm5 (index)
                 execution_cmd <= STRH_imm5;
                 destination_is_PC <= false;    
                 access_mem <= true;    
@@ -655,10 +655,10 @@ begin
                 access_mem_mode <= MEM_ACCESS_WRITE;
             ----------------------------------------------------------------------------------- -- STRB <Rt>,[<Rn>{,#<imm5>}]
             elsif (std_match(opcode, "01110-")) then  
-                gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt     
-                gp_addrA <=  '0' & instruction (5 downto 3);             -- Rn
-                gp_addrB <= B"0000";
-                imm8 <= B"000" & instruction (10 downto 6);              -- imm5
+                gp_WR_addr <= B"0000";                                   -- Will not be used '0' 
+                gp_addrA <= '0' & instruction (5 downto 3);              -- Rn (base)
+                gp_addrB <= '0' & instruction (2 downto 0);              -- Rt (target)
+                imm8 <= B"000" & instruction (10 downto 6);              -- imm5 (index)
                 execution_cmd <= STRB_imm5;
                 destination_is_PC <= false;    
                 access_mem <= true;    

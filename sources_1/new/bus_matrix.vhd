@@ -43,19 +43,20 @@ entity bus_matrix is
         --      and when LOW a read transfer. It has the same timing as the address signals,
         --      however, it must remain constant throughout a burst transfer.        
         cortex_m0_HWRITE : in std_logic;
+        cortex_m0_HSIZE : in std_logic_vector (2 downto 0);
         cortex_m0_HRDATA : out std_logic_vector (31 downto 0);
             
         code_bram_DOUTA : in std_logic_vector (31 downto 0); 
         code_bram_ADDRA : out std_logic_vector (14 downto 0); 
         code_bram_DINA : out std_logic_vector (31 downto 0); 
         code_bram_ENA : out std_logic; 
-        code_bram_WEA : out std_logic_vector (0 downto 0); 
+        code_bram_WEA : out std_logic_vector (3 downto 0); 
 
         data_bram_DOUTA : in std_logic_vector (31 downto 0); 
         data_bram_ADDRA : out std_logic_vector (14 downto 0); 
         data_bram_DINA : out std_logic_vector (31 downto 0); 
         data_bram_ENA : out std_logic; 
-        data_bram_WEA : out std_logic_vector (0 downto 0)
+        data_bram_WEA : out std_logic_vector (3 downto 0)
 
     );
 end bus_matrix;
@@ -110,18 +111,30 @@ begin
         end case;
    end process;
    
-    we_p: process (cortex_m0_HWRITE, HSEL_code_bram, HSEL_data_bram) 
+    we_p: process (cortex_m0_HWRITE, HSEL_code_bram, HSEL_data_bram, cortex_m0_HSIZE) 
         variable mux_sel : std_logic_vector (1 downto 0);
     begin
         mux_sel := HSEL_code_bram & HSEL_data_bram;
         if (cortex_m0_HWRITE = '1') then        
             case (mux_sel) is
-                when "10"   => code_bram_WEA <= "1"; data_bram_WEA <= "0";      -- Write Enable Code Block RAM
-                when "01"   => code_bram_WEA <= "0"; data_bram_WEA <= "1";      -- Write Enable Data Block RAM
-                when others => code_bram_WEA <= "0"; data_bram_WEA <= "0";      -- Write Enable None
+                when "10"   => 
+                    case (cortex_m0_HSIZE) is
+                        when "000" => code_bram_WEA <= "0001"; data_bram_WEA <= "0000";      -- Write Enable Code Block RAM - Byte
+                        when "001" => code_bram_WEA <= "0011"; data_bram_WEA <= "0000";      -- Write Enable Code Block RAM - Half-Word
+                        when "010" => code_bram_WEA <= "1111"; data_bram_WEA <= "0000";      -- Write Enable Code Block RAM - Word
+                        when others => code_bram_WEA <= "0000"; data_bram_WEA <= "0000"; 
+                    end case;
+                when "01"   => 
+                    case (cortex_m0_HSIZE) is
+                        when "000" => code_bram_WEA <= "0000"; data_bram_WEA <= "0001";      -- Write Enable Data Block RAM - Byte
+                        when "001" => code_bram_WEA <= "0000"; data_bram_WEA <= "0011";      -- Write Enable Data Block RAM - Half-Word
+                        when "010" => code_bram_WEA <= "0000"; data_bram_WEA <= "1111";      -- Write Enable Data Block RAM - Word
+                        when others => code_bram_WEA <= "0000"; data_bram_WEA <= "0000"; 
+                    end case;
+                when others => code_bram_WEA <= "0000"; data_bram_WEA <= "0000";      -- Write Enable None
             end case;
         else
-            code_bram_WEA <= "0"; data_bram_WEA <= "0"; 
+            code_bram_WEA <= "0000"; data_bram_WEA <= "0000"; 
         end if;    
     end process;   
     

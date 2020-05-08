@@ -414,6 +414,17 @@ begin
     ---------------------------------------------------------------------------------------
     --- Hardware which drives (Cortex-M0) module input/ouput pins
     ---------------------------------------------------------------------------------------    
+    
+    HWDATA <= gp_ram_dataB;
+    
+    HSIZE_p : process (mem_load_size) begin
+        case (mem_load_size) is
+            when WORD           =>  HSIZE <= "010";
+            when HALF_WORD      =>  HSIZE <= "001";  
+            when BYTE           =>  HSIZE <= "000";  
+            when others         =>   null;  
+        end case; 
+    end process;   
         
     HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_mem_addr) begin
         case (haddr_ctrl) is
@@ -436,9 +447,9 @@ begin
     HMASTLOCK <= '0';
     HPROT <= B"0000";
     HPROT <= B"0000";
-    HSIZE <= "000";
     HTRANS <= B"00";
-    HWDATA <= gp_ram_dataB;
+    
+    
         
     ---------------------------------------------------------------------------------------
     --- Hardware which drives (Executor) module input pins
@@ -568,6 +579,9 @@ begin
             hrdata_data_value_16_sized <= hrdata_data_value (15 downto 0);       -- Low Half Word
         end if;    
     end process;
+    
+   
+   
 
     
     ---------------------------------------------------------------------------------------
@@ -630,7 +644,7 @@ begin
     LDR_mul_result_value_p: process (command_value, imm8, LDR_multiplier, mem_index_content(7 downto 0), 
                                      PC_execute, LDR_mul_result_value) begin
         case (command_value) is
-            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5  => 
+            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5 | STRH_imm5 | STRB_imm5  => 
                 LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
             when LDR | LDRH | LDRSH | LDRB | LDRSB =>
                 LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));     

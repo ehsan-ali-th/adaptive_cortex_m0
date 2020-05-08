@@ -199,17 +199,53 @@ begin
                 when s_DATA_MEM_ACCESS_R => m0_core_next_state <= s_EXECUTE_DATA_MEM_R; 
                 when s_EXECUTE_DATA_MEM_R =>
                     if (access_mem = true) then 
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_R;
+                        if (access_mem_mode = MEM_ACCESS_READ) then 
+                            if (execution_cmd = LDM) then
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_LDM;
+                            else
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_R;
+                            end if;  
+                        elsif (access_mem_mode = MEM_ACCESS_WRITE) then
+                            if (execution_cmd = STM) then
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_STM;
+                            else
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_W;
+                            end if; 
+                        else 
+                            -- access_mem_mode = MEM_ACCESS_NONE
+                        
+                        end if;      
+                        -- CHECK if instruction updates PC
+                    elsif (PC_updated = true) then
+                       m0_core_next_state <= s_PC_UPDATED;
                     else    
                         m0_core_next_state <= s_RUN;     
-                    end if; 
+                    end if;    
                when s_DATA_MEM_ACCESS_W => m0_core_next_state <= s_EXECUTE_DATA_MEM_W; 
                when s_EXECUTE_DATA_MEM_W =>
                     if (access_mem = true) then 
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_W;
+                        if (access_mem_mode = MEM_ACCESS_READ) then 
+                            if (execution_cmd = LDM) then
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_LDM;
+                            else
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_R;
+                            end if;  
+                        elsif (access_mem_mode = MEM_ACCESS_WRITE) then
+                            if (execution_cmd = STM) then
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_STM;
+                            else
+                                m0_core_next_state <= s_DATA_MEM_ACCESS_W;
+                            end if; 
+                        else 
+                            -- access_mem_mode = MEM_ACCESS_NONE
+                        
+                        end if;      
+                        -- CHECK if instruction updates PC
+                    elsif (PC_updated = true) then
+                       m0_core_next_state <= s_PC_UPDATED;
                     else    
                         m0_core_next_state <= s_RUN;     
-                    end if; 
+                    end if;    
                when s_PC_UPDATED =>   
                     m0_core_next_state <= s_PIPELINE_FLUSH1;
                when s_PIPELINE_FLUSH1 =>   
