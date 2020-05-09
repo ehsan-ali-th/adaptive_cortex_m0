@@ -38,6 +38,15 @@ package helper_funcs is
     function to_std_logic (in_bit: bit) return std_logic;
     function to_std_logic (in_bit: boolean) return std_logic;
     
+    -- Vector Table
+--    constant VT_RESET       : integer := 1;
+--    constant VT_NMI         : integer := 2;
+--    constant VT_HardFault   : integer := 3;
+--    constant VT_SVCall      : integer := 11;
+--    constant VT_PendSV      : integer := 14;
+--    constant VT_SysTick     : integer := 15;
+    
+    -- type M0_vector_table is array (0 to 15) of std_logic_vector (31 downto 0);
 
  
 
@@ -45,6 +54,11 @@ package helper_funcs is
         s_RESET, 
         s_RESET1, 
         s_RESET2, 
+        s_SET_SP,
+        s_FETCH_PC,
+        s_SET_PC,
+        s_PRE1_RUN,
+        s_PRE2_RUN,
         s_RUN,
         s_DATA_MEM_ACCESS_R,
         s_DATA_MEM_ACCESS_W,
@@ -95,14 +109,17 @@ package helper_funcs is
         sel_PC,                 -- Put PC on the HADDR bus
         sel_DATA,               -- Put data_memory_addr on the HADDR bus
         sel_LDM,                -- Put data_memory_addr_i (base_reg_content) on the HADDR bus
-        sel_WDATA               -- Put data on the HADDR to be written into memory
+        sel_WDATA,              -- Put data on the HADDR to be written into memory
+        sel_VECTOR_TABLE    
     );   
    
     type gp_data_in_ctrl_t is (
-        ALU_RESULT,
-        HRDATA_VALUE_SIZED,
-        LDM_DATA,
-        LDM_Rn
+        sel_ALU_RESULT,
+        sel_HRDATA_VALUE_SIZED,
+        sel_LDM_DATA,
+        sel_LDM_Rn,
+        sel_SP_main_init,
+        sel_PC_init
     );  
 
     type low_register_t is (
@@ -121,7 +138,18 @@ package helper_funcs is
         MEM_ACCESS_READ, 
         MEM_ACCESS_WRITE, 
         MEM_ACCESS_NONE
-   );   
+   );  
+   
+   type VT_ctrl_t is (
+        VT_SP_main,
+        VT_RESET,
+        VT_NMI,
+        VT_HardFault,
+        VT_SVCall,
+        VT_PendSV,
+        VT_SysTick,
+        VT_NONE 
+   ); 
  
     type flag_t is record 
         N  : bit;                              -- Negative    

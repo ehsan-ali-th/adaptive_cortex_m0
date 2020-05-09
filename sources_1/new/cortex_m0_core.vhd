@@ -148,6 +148,8 @@ architecture Behavioral of cortex_m0_core is
             LDM_access_mem : in boolean;
             new_PC : in std_logic_vector (31 downto 0);
             access_mem_mode : IN access_mem_mode_t;
+            SP_main_init : in std_logic_vector (31 downto 0);
+            PC_init : in std_logic_vector (31 downto 0);
             PC : out std_logic_vector(31 downto 0);
             PC_decode : out std_logic_vector (31 downto 0);
             PC_execute :  out std_logic_vector (31 downto 0);
@@ -160,7 +162,8 @@ architecture Behavioral of cortex_m0_core is
             gp_addrA_executor_ctrl : out boolean;
             LDM_W_reg : out std_logic_vector (3 downto 0);
             LDM_capture_base : out boolean;
-            HWRITE : out std_logic
+            HWRITE : out std_logic;
+            VT_ctrl : out VT_ctrl_t
         );
     end component;
     
@@ -177,7 +180,7 @@ architecture Behavioral of cortex_m0_core is
             );
     end component;
     
-     component count_ones is
+    component count_ones is
         Port ( byte_in : in STD_LOGIC_VECTOR (7 downto 0);
                ones : out STD_LOGIC_VECTOR (3 downto 0));
     end component;
@@ -211,13 +214,11 @@ architecture Behavioral of cortex_m0_core is
 	signal ldm_hrdata_value : std_logic_vector (31 downto 0);
 	signal LDM_mem_address_index : unsigned (4 downto 0);
 	signal LDM_mem_addr : unsigned (31 downto 0);
-
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
-
     signal internal_reset: std_logic := '1';
-    signal thumb: std_logic := '0';
-    signal valid: std_logic := '0';
+    signal VT_addr : std_logic_vector(31 downto 0);
+    
    
 	-- Registers after decoder
 	signal gp_WR_addr : std_logic_vector(3 downto 0) := (others => '0');	
@@ -278,6 +279,10 @@ architecture Behavioral of cortex_m0_core is
     signal gp_addrA_executor_ctrl : boolean;
     signal LDM_W_reg :std_logic_vector (3 downto 0);
     signal LDM_capture_base : boolean;
+    signal SP_main_init:  std_logic_vector (31 downto 0);
+    signal PC_init:  std_logic_vector (31 downto 0);
+    signal VT_ctrl: VT_ctrl_t;
+    
     
    
     signal data_memory_addr_i : unsigned (31 downto 0);
@@ -324,98 +329,101 @@ architecture Behavioral of cortex_m0_core is
 begin
 
     m0_registers: registers port map (
-        clk => HCLK,
-        reset => internal_reset,
-        WE => WE,
-        gp_WR_addr => gp_WR_addr_final, 
-        gp_data_in => gp_data_in,
-        gp_addrA => gp_addrA,
-        gp_addrB => gp_addrB_final,
-        gp_addrC => gp_addrC, 
-        gp_ram_dataA => gp_ram_dataA,
-        gp_ram_dataB => gp_ram_dataB,
-        gp_ram_dataC => gp_ram_dataC
+                            clk => HCLK,
+                          reset => internal_reset,
+                             WE => WE,
+                     gp_WR_addr => gp_WR_addr_final, 
+                     gp_data_in => gp_data_in,
+                       gp_addrA => gp_addrA,
+                       gp_addrB => gp_addrB_final,
+                       gp_addrC => gp_addrC, 
+                   gp_ram_dataA => gp_ram_dataA,
+                   gp_ram_dataB => gp_ram_dataB,
+                   gp_ram_dataC => gp_ram_dataC
     );
     
     m0_decoder: decoder port map ( 
-        instruction => current_instruction,
-        instruction_size => instruction_size,
-        destination_is_PC => PC_updated,
-        gp_WR_addr => gp_WR_addr_value,
-        gp_addrA => gp_addrA_value,
-        gp_addrB => gp_addrB_value,
-        gp_addrC => gp_addrC_value,
-        imm8 => imm8,
-        execution_cmd => command_value,
-        access_mem => access_mem_value,
-        use_base_register => use_base_register,
-        mem_load_size => mem_load_size_value,
-        mem_load_sign_ext => mem_load_sign_ext_value,
-        LDM_access_mem => LDM_access_mem_value,
-        access_mem_mode => access_mem_mode
+                    instruction => current_instruction,
+               instruction_size => instruction_size,
+              destination_is_PC => PC_updated,
+                     gp_WR_addr => gp_WR_addr_value,
+                       gp_addrA => gp_addrA_value,
+                       gp_addrB => gp_addrB_value,
+                       gp_addrC => gp_addrC_value,
+                           imm8 => imm8,
+                  execution_cmd => command_value,
+                     access_mem => access_mem_value,
+              use_base_register => use_base_register,
+                  mem_load_size => mem_load_size_value,
+              mem_load_sign_ext => mem_load_sign_ext_value,
+                 LDM_access_mem => LDM_access_mem_value,
+                access_mem_mode => access_mem_mode
         );
     
      m0_executor: executor port map (
-         clk => HCLK,
-         reset => internal_reset,
-         operand_A => gp_addrA_executor,	
-         operand_B => executor_opernd_B,	
-         command => command, 	
-         imm8_z_ext => imm8_z_ext,
-         destination_is_PC => PC_updated,
-         current_flags => flags,
-         access_mem => access_mem,
-         gp_data_in_ctrl => gp_data_in_ctrl, 
-         disable_executor => disable_executor,
-         cmd_out => cmd_out,
-         set_flags => set_flags,
-         result => result,
-         alu_temp_32 => alu_temp_32,
-         overflow_status => overflow_status,
-         WE => WE
+                            clk => HCLK,
+                          reset => internal_reset,
+                      operand_A => gp_addrA_executor,	
+                      operand_B => executor_opernd_B,	
+                        command => command, 	
+                     imm8_z_ext => imm8_z_ext,
+              destination_is_PC => PC_updated,
+                  current_flags => flags,
+                     access_mem => access_mem,
+                gp_data_in_ctrl => gp_data_in_ctrl, 
+               disable_executor => disable_executor,
+                        cmd_out => cmd_out,
+                      set_flags => set_flags,
+                         result => result,
+                    alu_temp_32 => alu_temp_32,
+                overflow_status => overflow_status,
+                             WE => WE
          );
          
       m0_core_state_m: core_state port map (
-        clk => HCLK,
-        reset => internal_reset,
-        instruction_size => instruction_size,
-        access_mem => access_mem_value,
-        PC_updated => PC_updated,
-        imm8 => imm8_z_ext(7 downto 0),
-        number_of_ones_initial => number_of_ones_initial,
-        execution_cmd => command_value,
-        LDM_access_mem => LDM_access_mem,
-        new_PC => result, 
-        access_mem_mode => access_mem_mode,
-        PC => PC,
-        PC_decode => PC_decode,
-        PC_execute => PC_execute,
-        PC_after_execute => PC_after_execute,
-        LDM_mem_address_index => LDM_mem_address_index,
-        gp_data_in_ctrl => gp_data_in_ctrl,
-        disable_fetch => disable_fetch,
-        haddr_ctrl => haddr_ctrl,
-        disable_executor => disable_executor,
-        gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
-        LDM_W_reg => LDM_W_reg,
-        LDM_capture_base => LDM_capture_base,
-        HWRITE => HWRITE
+                            clk => HCLK,
+                          reset => internal_reset,
+               instruction_size => instruction_size,
+                     access_mem => access_mem_value,
+                     PC_updated => PC_updated,
+                           imm8 => imm8_z_ext(7 downto 0),
+         number_of_ones_initial => number_of_ones_initial,
+                  execution_cmd => command_value,
+                 LDM_access_mem => LDM_access_mem,
+                         new_PC => result, 
+                access_mem_mode => access_mem_mode,
+                   SP_main_init => SP_main_init,
+                        PC_init => PC_init,
+                             PC => PC,
+                      PC_decode => PC_decode,
+                     PC_execute => PC_execute,
+               PC_after_execute => PC_after_execute,
+          LDM_mem_address_index => LDM_mem_address_index,
+                gp_data_in_ctrl => gp_data_in_ctrl,
+                  disable_fetch => disable_fetch,
+                     haddr_ctrl => haddr_ctrl,
+               disable_executor => disable_executor,
+         gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
+                      LDM_W_reg => LDM_W_reg,
+               LDM_capture_base => LDM_capture_base,
+                         HWRITE => HWRITE,
+                        VT_ctrl => VT_ctrl
         ); 
         
      m0_core_flags: status_flags port map (
-        clk => HCLK,
-        reset => internal_reset,
-        result => result,
-        C_in => alu_temp_32,
-        cmd => cmd_out,
-        set_flags => set_flags,
-        overflow_status => overflow_status,
-        flags_o  => flags
+                            clk => HCLK,
+                          reset => internal_reset,
+                         result => result,
+                           C_in => alu_temp_32,
+                            cmd => cmd_out,
+                      set_flags => set_flags,
+                overflow_status => overflow_status,
+                       flags_o  => flags
         );
         
      m0_count_ones: count_ones port map ( 
-        byte_in => imm8_z_ext(7 downto 0),
-        ones => number_of_ones_initial
+                        byte_in => imm8_z_ext(7 downto 0),
+                           ones => number_of_ones_initial
         );    
         
     LDM_total_bytes_read <= std_logic_vector (shift_left(unsigned('0' & number_of_ones_initial), 2)); --     
@@ -433,14 +441,41 @@ begin
             when BYTE           =>  HSIZE <= "000";  
             when others         =>   null;  
         end case; 
-    end process;   
+    end process;  
+    
+    VT_addr_p : process (VT_ctrl) begin
+        case (VT_ctrl) is                                           -- Vector Table index
+            when    VT_SP_main =>  VT_addr <= x"0000_0000";         -- 0
+            when      VT_RESET =>  VT_addr <= x"0000_0004";         -- 1
+            when        VT_NMI =>  VT_addr <= x"0000_0008";         -- 2
+            when  VT_HardFault =>  VT_addr <= x"0000_000C";         -- 3
+            when     VT_SVCall =>  VT_addr <= x"0000_002C";         -- 11
+            when     VT_PendSV =>  VT_addr <= x"0000_0038";         -- 14
+            when    VT_SysTick =>  VT_addr <= x"0000_003C";         -- 15
+            when       VT_NONE =>  VT_addr <= x"0000_0000";
+            when others          =>   null;  
+        end case; 
+    end process;    
         
-    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_mem_addr) begin
+    hrdata_p: process (gp_data_in_ctrl, HRDATA) begin
+        case (gp_data_in_ctrl) is 
+            when sel_ALU_RESULT         => hrdata_progrm_value  <= HRDATA;
+            when sel_HRDATA_VALUE_SIZED => hrdata_data_value    <= HRDATA; 
+            when sel_LDM_DATA           => ldm_hrdata_value     <= HRDATA; 
+            when sel_LDM_Rn             => hrdata_progrm_value  <= HRDATA;
+            when sel_SP_main_init       => SP_main_init         <= HRDATA;
+            when sel_PC_init            => PC_init              <= HRDATA;
+            when others                 => hrdata_progrm_value  <= HRDATA; report " hrdata demux error." severity failure;
+        end case;
+    end process;
+    
+    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_mem_addr, VT_addr) begin
         case (haddr_ctrl) is
-            when sel_PC     =>  HADDR <= PC(31 downto 2) & B"00";  
-            when sel_DATA   =>  HADDR <= data_memory_addr;
-            when sel_LDM    =>  HADDR <= std_logic_vector (LDM_mem_addr);
-            when sel_WDATA  =>  HADDR <= std_logic_vector (data_memory_addr_i);
+            when              sel_PC =>  HADDR <= PC(31 downto 2) & B"00";  
+            when            sel_DATA =>  HADDR <= data_memory_addr;
+            when             sel_LDM =>  HADDR <= std_logic_vector (LDM_mem_addr);
+            when           sel_WDATA =>  HADDR <= std_logic_vector (data_memory_addr_i);
+            when    sel_VECTOR_TABLE =>  HADDR <= VT_addr;
         end case;
     end process;   
    
@@ -503,11 +538,13 @@ begin
     
      gp_data_in_p: process (gp_data_in_ctrl, result, hrdata_data_value_sized, ldm_hrdata_value, LDM_total_bytes_read, gp_ram_dataA) begin
         case (gp_data_in_ctrl) is 
-            when ALU_RESULT         => gp_data_in <= result;
-            when HRDATA_VALUE_SIZED => gp_data_in <= hrdata_data_value_sized;  
-            when LDM_DATA           => gp_data_in <= ldm_hrdata_value;
-            when LDM_Rn             => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
-            when others             => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
+            when sel_ALU_RESULT         => gp_data_in <= result;
+            when sel_HRDATA_VALUE_SIZED => gp_data_in <= hrdata_data_value_sized;  
+            when sel_LDM_DATA           => gp_data_in <= ldm_hrdata_value;
+            when sel_LDM_Rn             => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
+            when sel_SP_main_init       => gp_data_in <= result;
+            when sel_PC_init            => gp_data_in <= result;
+            when others                 => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;
     
@@ -604,16 +641,6 @@ begin
         end if;
     end process;
 
-    hrdata_p: process (gp_data_in_ctrl, HRDATA) begin
-        case (gp_data_in_ctrl) is 
-            when ALU_RESULT         => hrdata_progrm_value <= HRDATA;
-            when HRDATA_VALUE_SIZED => hrdata_data_value <= HRDATA; 
-            when LDM_DATA           => ldm_hrdata_value <= HRDATA; 
-            when LDM_Rn             => hrdata_progrm_value <= HRDATA;
-            when others             => hrdata_progrm_value <= HRDATA; report " hrdata demux error." severity failure;
-        end case;
-    end process;
-    
     imm8_z_ext_value_p: process  (command_value, imm8) begin
         case (command_value) is
             when MOVS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
