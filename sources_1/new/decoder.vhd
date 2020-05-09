@@ -784,15 +784,15 @@ begin
                 access_mem_mode <= MEM_ACCESS_WRITE;
              ----------------------------------------------------------------------------------- -- STR <Rt>,[SP,#<imm8>]    
             elsif (std_match(opcode, "10010-") ) then       
-                gp_WR_addr <= '0' & instruction (10 downto 8);           -- Rt
-                gp_addrA <= B"0000";
-                gp_addrB <= B"0000";
-                gp_addrC <=  B"0000";                                   -- Will not be used '0' 
-                imm8 <= instruction (7 downto 0);                        -- imm8 <label>
+                gp_WR_addr <= B"0000";                                   -- Will not be used '0' 
+                gp_addrA   <= B"0000";                                   -- inferred: SP (base)
+                gp_addrB   <= '0' & instruction (10 downto 8);           -- Rt (target)
+                gp_addrC   <= B"0000";                                   -- Will not be used '0' 
+                imm8       <= instruction (7 downto 0);        -- imm5 (index)
                 execution_cmd <= STR_SP_imm8;
                 destination_is_PC <= false;   
                 access_mem <= true;    
-                use_base_register <= false;   
+                use_base_register <= true;   
                 mem_load_size <= WORD;
                 mem_load_sign_ext <= false;
                 LDM_access_mem <= false;     

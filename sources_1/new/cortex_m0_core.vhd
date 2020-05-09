@@ -151,6 +151,7 @@ architecture Behavioral of cortex_m0_core is
             SP_main_init : in std_logic_vector (31 downto 0);
             PC_init : in std_logic_vector (31 downto 0);
             PC : out std_logic_vector(31 downto 0);
+            SP_main : out std_logic_vector (31 downto 0);
             PC_decode : out std_logic_vector (31 downto 0);
             PC_execute :  out std_logic_vector (31 downto 0);
             PC_after_execute :  out std_logic_vector (31 downto 0);
@@ -279,6 +280,7 @@ architecture Behavioral of cortex_m0_core is
     signal gp_addrA_executor_ctrl : boolean;
     signal LDM_W_reg :std_logic_vector (3 downto 0);
     signal LDM_capture_base : boolean;
+    signal SP_main:  std_logic_vector (31 downto 0);
     signal SP_main_init:  std_logic_vector (31 downto 0);
     signal PC_init:  std_logic_vector (31 downto 0);
     signal VT_ctrl: VT_ctrl_t;
@@ -395,6 +397,7 @@ begin
                    SP_main_init => SP_main_init,
                         PC_init => PC_init,
                              PC => PC,
+                        SP_main => SP_main,
                       PC_decode => PC_decode,
                      PC_execute => PC_execute,
                PC_after_execute => PC_after_execute,
@@ -682,7 +685,7 @@ begin
         --variable calc_index : unsigned (7 downto 0);        -- Calculate index by dividing : Word: divide by 4, HWord: divide by 2, Byte: no change                             
                                      begin
         case (command_value) is
-            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5 | STRH_imm5 | STRB_imm5  => 
+            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5 | STRH_imm5 | STRB_imm5 | STR_SP_imm8  => 
                 LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
             when LDR | LDRH | LDRSH | LDRB | LDRSB =>
                 LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));     
@@ -714,30 +717,43 @@ begin
     end process;
     
     base_reg_content_p: process (forward_alu_result, gp_data_in, gp_ram_dataB, 
-                                 gp_ram_dataA, gp_ram_dataC, gp_addrA_value, command_value) begin
+                                 gp_ram_dataA, gp_ram_dataC, gp_addrA_value, command_value, SP_main) begin
         if (forward_alu_result = true) then 
             if (gp_WR_addr = gp_addrA_value) then
                 if (command_value = STR or command_value = STRH or command_value = STRB) then
                     mem_index_content <= gp_ram_dataC; 
                 else
                     mem_index_content <= gp_ram_dataB; 
-                end if;     
-                base_reg_content <= gp_data_in;  
+                end if;
+                 if (command_value = STR_SP_imm8) then
+                    base_reg_content <= SP_main;
+                else
+                   base_reg_content <= gp_data_in;  
+                end if;         
             else
                 if (command_value = STR or command_value = STRH or command_value = STRB) then
                     mem_index_content <= gp_ram_dataC;
                 else
                     mem_index_content <= gp_data_in;
                 end if;
-                base_reg_content <= gp_ram_dataA;    
+                if (command_value = STR_SP_imm8) then
+                    base_reg_content <= SP_main;
+                else
+                    base_reg_content <= gp_ram_dataA;  
+                end if; 
             end if;    
         else
             if (command_value = STR or command_value = STRH or command_value = STRB) then
                 mem_index_content <= gp_ram_dataC;
             else
                 mem_index_content <= gp_ram_dataB;
+            end if;
+            if (command_value = STR_SP_imm8) then
+                base_reg_content <= SP_main;
+            else
+                base_reg_content <= gp_ram_dataA;
             end if;    
-            base_reg_content <= gp_ram_dataA;
+            
         end if;   
     end process;
     
