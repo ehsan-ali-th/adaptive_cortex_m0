@@ -155,14 +155,14 @@ architecture Behavioral of cortex_m0_core is
             PC_decode : out std_logic_vector (31 downto 0);
             PC_execute :  out std_logic_vector (31 downto 0);
             PC_after_execute :  out std_logic_vector (31 downto 0);
-            LDM_mem_address_index :  out unsigned (4 downto 0); 
+            LDM_STM_mem_address_index :  out unsigned (4 downto 0); 
             gp_data_in_ctrl : out gp_data_in_ctrl_t;
             disable_fetch : out boolean;
             haddr_ctrl : out haddr_ctrl_t; 
             disable_executor : out boolean;
             gp_addrA_executor_ctrl : out boolean;
             LDM_W_reg : out std_logic_vector (3 downto 0);
-            LDM_capture_base : out boolean;
+            LDM_STM_capture_base : out boolean;
             HWRITE : out std_logic;
             VT_ctrl : out VT_ctrl_t
         );
@@ -213,8 +213,8 @@ architecture Behavioral of cortex_m0_core is
 	signal hrdata_data_value_sized : std_logic_vector (31 downto 0);
 	signal hrdata_data_value_16_sized : std_logic_vector (15 downto 0);
 	signal ldm_hrdata_value : std_logic_vector (31 downto 0);
-	signal LDM_mem_address_index : unsigned (4 downto 0);
-	signal LDM_mem_addr : unsigned (31 downto 0);
+	signal LDM_STM_mem_address_index : unsigned (4 downto 0);
+	signal LDM_STM_mem_addr : unsigned (31 downto 0);
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
     signal internal_reset: std_logic := '1';
@@ -268,9 +268,6 @@ architecture Behavioral of cortex_m0_core is
 	signal executor_opernd_B : std_logic_vector (31 downto 0);
 	
 	-- core state signals
-	signal m0_core_state: core_state_t; 
-    signal m0_next_state : core_state_t;
-    signal m0_previous_state : core_state_t;
     signal flags       :  flag_t;
     signal instr_ptr : std_logic;
     signal disable_fetch : boolean;
@@ -279,7 +276,7 @@ architecture Behavioral of cortex_m0_core is
     signal disable_executor : boolean;
     signal gp_addrA_executor_ctrl : boolean;
     signal LDM_W_reg :std_logic_vector (3 downto 0);
-    signal LDM_capture_base : boolean;
+    signal LDM_STM_capture_base : boolean;
     signal SP_main:  std_logic_vector (31 downto 0);
     signal SP_main_init:  std_logic_vector (31 downto 0);
     signal PC_init:  std_logic_vector (31 downto 0);
@@ -292,7 +289,7 @@ architecture Behavioral of cortex_m0_core is
     signal LDR_mul_result_value : unsigned (7 downto 0);
     signal LDR_multiplier : unsigned (7 downto 0);
     signal base_reg_content : std_logic_vector (31 downto 0);
-    signal base_reg_content_LDM : std_logic_vector (31 downto 0);
+    signal base_reg_content_LDM_STM : std_logic_vector (31 downto 0);
     signal mem_index_content : std_logic_vector (31 downto 0);
     signal forward_alu_result : boolean;
   
@@ -391,7 +388,7 @@ begin
                            imm8 => imm8_z_ext(7 downto 0),
          number_of_ones_initial => number_of_ones_initial,
                   execution_cmd => command_value,
-                 LDM_access_mem => LDM_access_mem,
+                 LDM_access_mem => LDM_access_mem_value,
                          new_PC => result, 
                 access_mem_mode => access_mem_mode,
                    SP_main_init => SP_main_init,
@@ -401,14 +398,14 @@ begin
                       PC_decode => PC_decode,
                      PC_execute => PC_execute,
                PC_after_execute => PC_after_execute,
-          LDM_mem_address_index => LDM_mem_address_index,
+      LDM_STM_mem_address_index => LDM_STM_mem_address_index,
                 gp_data_in_ctrl => gp_data_in_ctrl,
                   disable_fetch => disable_fetch,
                      haddr_ctrl => haddr_ctrl,
                disable_executor => disable_executor,
          gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
                       LDM_W_reg => LDM_W_reg,
-               LDM_capture_base => LDM_capture_base,
+           LDM_STM_capture_base => LDM_STM_capture_base,
                          HWRITE => HWRITE,
                         VT_ctrl => VT_ctrl
         ); 
@@ -472,17 +469,18 @@ begin
         end case;
     end process;
     
-    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_mem_addr, VT_addr) begin
+    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_STM_mem_addr, VT_addr) begin
         case (haddr_ctrl) is
             when              sel_PC =>  HADDR <= PC(31 downto 2) & B"00";  
             when            sel_DATA =>  HADDR <= data_memory_addr;
-            when             sel_LDM =>  HADDR <= std_logic_vector (LDM_mem_addr);
+            when             sel_LDM =>  HADDR <= std_logic_vector (LDM_STM_mem_addr);
+            when             sel_STM =>  HADDR <= std_logic_vector (LDM_STM_mem_addr);
             when           sel_WDATA =>  HADDR <= std_logic_vector (data_memory_addr_i);
             when    sel_VECTOR_TABLE =>  HADDR <= VT_addr;
         end case;
     end process;   
    
-   LDM_mem_addr <= (unsigned (base_reg_content_LDM) + LDM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
+   LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
     
     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -757,9 +755,9 @@ begin
         end if;   
     end process;
     
-    base_reg_content_LDM_p: process (LDM_capture_base, gp_ram_dataA) begin
-        if (LDM_capture_base = true) then
-            base_reg_content_LDM <= gp_ram_dataA;
+    base_reg_content_LDM_STM_STM_p: process (LDM_STM_capture_base, gp_ram_dataA) begin
+        if (LDM_STM_capture_base = true) then
+            base_reg_content_LDM_STM <= gp_ram_dataA;
        
         end if;   
     end process;
@@ -767,7 +765,7 @@ begin
     data_memory_addr_value_p: process (command_value, gp_ram_dataA, PC_execute, base_reg_content, 
                                        LDR_mul_result_value, use_base_register) begin
         if (use_base_register = true) then 
-            if (command_value = LDM) then
+            if (command_value = LDM or command_value = STM) then
                 data_memory_addr_i <=  unsigned (base_reg_content); -- Expected to be aligned or HardFaault
             else
                 data_memory_addr_i <= unsigned (base_reg_content) +  unsigned(x"0000_00" & LDR_mul_result_value); 

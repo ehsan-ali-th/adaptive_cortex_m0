@@ -37,6 +37,7 @@ package helper_funcs is
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     function to_std_logic (in_bit: bit) return std_logic;
     function to_std_logic (in_bit: boolean) return std_logic;
+   
     
     -- Vector Table
 --    constant VT_RESET       : integer := 1;
@@ -69,7 +70,6 @@ package helper_funcs is
         s_PIPELINE_FLUSH2,
         s_PIPELINE_FLUSH3,
         s_DATA_MEM_ACCESS_LDM,
-        s_DATA_MEM_ACCESS_STM,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R0,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R1,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R2,
@@ -77,7 +77,16 @@ package helper_funcs is
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R4,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R5,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R6,
-        s_DATA_MEM_ACCESS_EXECUTE_LDM_R7
+        s_DATA_MEM_ACCESS_EXECUTE_LDM_R7,
+        s_DATA_REG_ACCESS_STM,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R0,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R1,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R2,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R3,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R4,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R5,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R6,
+        s_DATA_REG_ACCESS_EXECUTE_STM_R7
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -108,7 +117,8 @@ package helper_funcs is
     type haddr_ctrl_t is (
         sel_PC,                 -- Put PC on the HADDR bus
         sel_DATA,               -- Put data_memory_addr on the HADDR bus
-        sel_LDM,                -- Put data_memory_addr_i (base_reg_content) on the HADDR bus
+        sel_LDM,                -- Put LDM_STM_mem_addr on the HADDR bus
+        sel_STM,                -- Put LDM_STM_mem_addr on the HADDR bus
         sel_WDATA,              -- Put data on the HADDR to be written into memory
         sel_VECTOR_TABLE    
     );   
@@ -164,7 +174,14 @@ package helper_funcs is
     function IsAligned (
         address : in std_logic_vector (31 downto 0);
         size : in integer) return boolean;
-    function set_LDM_target_reg (imm8 : in std_logic_vector (7 downto 0)) return low_register_t;    
+    
+    function set_LDM_target_reg (imm8 : in std_logic_vector (7 downto 0)) return low_register_t;   
+    
+    function run_next_state_calc (
+        access_mem      : boolean; 
+        access_mem_mode : access_mem_mode_t;
+        execution_cmd   : executor_cmds_t;
+        PC_updated      : boolean ) return  core_state_t; 
 
 end  helper_funcs;
 
@@ -284,5 +301,40 @@ package body helper_funcs is
         end if;  
         return target_reg;    
     end function;
+    
+     function run_next_state_calc (
+        access_mem      : boolean; 
+        access_mem_mode : access_mem_mode_t;
+        execution_cmd   : executor_cmds_t;
+        PC_updated      : boolean ) return core_state_t is
+        variable next_state : core_state_t;
+      begin
+             -- CHECK if instruction needs memory access
+            if (access_mem = true) then 
+                if (access_mem_mode = MEM_ACCESS_READ) then 
+                    if (execution_cmd = LDM) then
+                        next_state := s_DATA_MEM_ACCESS_LDM;
+                    else
+                        next_state := s_DATA_MEM_ACCESS_R;
+                    end if;  
+                elsif (access_mem_mode = MEM_ACCESS_WRITE) then
+                    if (execution_cmd = STM) then
+                        next_state := s_DATA_REG_ACCESS_STM;
+                    else
+                        next_state := s_DATA_MEM_ACCESS_W;
+                    end if; 
+                else 
+                    -- access_mem_mode = MEM_ACCESS_NONE
+                
+                end if;      
+                -- CHECK if instruction updates PC
+            elsif (PC_updated = true) then
+                next_state := s_PC_UPDATED;
+            else    
+                next_state := s_RUN;     
+            end if;  
+        
+        return  next_state; 
+  end function;
 
 end  helper_funcs;
