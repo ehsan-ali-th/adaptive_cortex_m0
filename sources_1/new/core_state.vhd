@@ -221,33 +221,15 @@ begin
                     else
                         m0_core_next_state <= run_next_state_calc (access_mem, access_mem_mode, execution_cmd, PC_updated);  
                     end if;  
-               when s_DATA_REG_ACCESS_STM =>
-                    if    (imm8(0) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R0;
-                    elsif (imm8(1) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R1;
-                    elsif (imm8(2) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R2;
-                    elsif (imm8(3) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R3;
-                    elsif (imm8(4) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R4;
-                    elsif (imm8(5) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
-                    elsif (imm8(6) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
-                    else
-                        m0_core_next_state <= run_next_state_calc (access_mem, access_mem_mode, execution_cmd, PC_updated);  
-                    end if;      
                 when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
                     -- if we reach this state we are sure that LDM_STM_counter is greater than 1
                     if (LDM_STM_counter = 0) then
                         m0_core_next_state <= run_next_state_calc (access_mem, access_mem_mode, execution_cmd, PC_updated);
                     else
-                        if (imm8(2) = '1') then   
-                            m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        if (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(2) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
                         elsif (imm8(3) = '1') then   
                              m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
                         elsif (imm8(4) = '1') then   
@@ -360,6 +342,26 @@ begin
                     end if; 
                 when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
                     m0_core_next_state <= run_next_state_calc (access_mem, access_mem_mode, execution_cmd, PC_updated);
+                when s_DATA_REG_ACCESS_STM =>
+                    if    (imm8(0) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R0;
+                    elsif (imm8(1) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R1;
+                    elsif (imm8(2) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R2;
+                    elsif (imm8(3) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R3;
+                    elsif (imm8(4) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R4;
+                    elsif (imm8(5) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
+                    elsif (imm8(6) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
+                    elsif (imm8(7) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
+                    else
+                        m0_core_next_state <= run_next_state_calc (access_mem, access_mem_mode, execution_cmd, PC_updated);  
+                    end if;      
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R0 =>  
                     -- if we reach this state we are sure that LDM_STM_counter is greater than 1
                     if (LDM_STM_counter = 0) then
