@@ -127,6 +127,7 @@ package helper_funcs is
         sel_ALU_RESULT,
         sel_HRDATA_VALUE_SIZED,
         sel_LDM_DATA,
+        sel_STM_DATA,
         sel_LDM_Rn,
         sel_SP_main_init,
         sel_PC_init

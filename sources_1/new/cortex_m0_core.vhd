@@ -161,7 +161,7 @@ architecture Behavioral of cortex_m0_core is
             haddr_ctrl : out haddr_ctrl_t; 
             disable_executor : out boolean;
             gp_addrA_executor_ctrl : out boolean;
-            LDM_W_reg : out std_logic_vector (3 downto 0);
+            LDM_W_STM_R_reg : out std_logic_vector (3 downto 0);
             LDM_STM_capture_base : out boolean;
             HWRITE : out std_logic;
             VT_ctrl : out VT_ctrl_t
@@ -275,7 +275,7 @@ architecture Behavioral of cortex_m0_core is
     signal haddr_ctrl : haddr_ctrl_t;
     signal disable_executor : boolean;
     signal gp_addrA_executor_ctrl : boolean;
-    signal LDM_W_reg :std_logic_vector (3 downto 0);
+    signal LDM_W_STM_R_reg :std_logic_vector (3 downto 0);
     signal LDM_STM_capture_base : boolean;
     signal SP_main:  std_logic_vector (31 downto 0);
     signal SP_main_init:  std_logic_vector (31 downto 0);
@@ -404,7 +404,7 @@ begin
                      haddr_ctrl => haddr_ctrl,
                disable_executor => disable_executor,
          gp_addrA_executor_ctrl => gp_addrA_executor_ctrl,
-                      LDM_W_reg => LDM_W_reg,
+                LDM_W_STM_R_reg => LDM_W_STM_R_reg,
            LDM_STM_capture_base => LDM_STM_capture_base,
                          HWRITE => HWRITE,
                         VT_ctrl => VT_ctrl
@@ -453,7 +453,7 @@ begin
             when     VT_PendSV =>  VT_addr <= x"0000_0038";         -- 14
             when    VT_SysTick =>  VT_addr <= x"0000_003C";         -- 15
             when       VT_NONE =>  VT_addr <= x"0000_0000";
-            when others          =>   null;  
+            when others        =>   null;  
         end case; 
     end process;    
         
@@ -465,6 +465,7 @@ begin
             when sel_LDM_Rn             => hrdata_progrm_value  <= HRDATA;
             when sel_SP_main_init       => SP_main_init         <= HRDATA;
             when sel_PC_init            => PC_init              <= HRDATA;
+            when sel_STM_DATA           =>
             when others                 => hrdata_progrm_value  <= HRDATA; report " hrdata demux error." severity failure;
         end case;
     end process;
@@ -525,12 +526,12 @@ begin
     --- Hardware which drives (Register) module input pins
     ---------------------------------------------------------------------------------------
     
-     gp_WR_addr_final_p: process (LDM_access_mem, LDM_W_reg, gp_WR_addr, disable_executor, gp_AddrA) begin
+     gp_WR_addr_final_p: process (LDM_access_mem, LDM_W_STM_R_reg, gp_WR_addr, disable_executor, gp_AddrA) begin
          if (LDM_access_mem = true) then
             if (disable_executor = true) then 
                 gp_WR_addr_final <= gp_AddrA;       -- Save the Rn in LDM instruction into gp_AddrA register.
             else 
-                gp_WR_addr_final <= LDM_W_reg;
+                gp_WR_addr_final <= LDM_W_STM_R_reg;
             end if;  
          else
             gp_WR_addr_final <= gp_WR_addr;
@@ -545,17 +546,23 @@ begin
             when sel_LDM_Rn             => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when sel_SP_main_init       => gp_data_in <= result;
             when sel_PC_init            => gp_data_in <= result;
+            when sel_STM_DATA           => gp_data_in <= x"0000_0000";
             when others                 => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;
     
-      gp_addrB_p: process (use_base_register, gp_addrB_value, gp_addrB) begin
-        if (use_base_register = true) then 
-             gp_addrB_final <= gp_addrB_value;  
+    gp_addrB_final_p: process (haddr_ctrl, use_base_register, gp_addrB_value, gp_addrB, LDM_W_STM_R_reg) begin
+        if (haddr_ctrl = sel_STM) then
+            gp_addrB_final <= LDM_W_STM_R_reg;   
         else
-             gp_addrB_final <= gp_addrB;
+            if (use_base_register = true) then 
+                 gp_addrB_final <= gp_addrB_value;  
+            else
+                 gp_addrB_final <= gp_addrB;
+            end if;
         end if;   
     end process;
+    
     
     hrdata_data_value_sized_p: process (mem_load_size, mem_load_sign_ext, hrdata_data_value, 
                                         hrdata_data_value_16_sized, data_memory_addr_i(1 downto 0)) 
@@ -1095,7 +1102,7 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); -- Rn 
                 imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                 imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));  
-                cortex_m0_opcode <= "LDM " & Rd_decode & ",{" & imm8_decode & "}"  & "     ";   
+                cortex_m0_opcode <= "LDM " & Rd_decode & "!,{" & imm8_decode & "}"  & "    ";   
              
            -------------------------------------------------------------------------------------- -- STR <Rt>, [<Rn>{,#<imm5>}]
            elsif std_match(current_instruction(15 downto 11), "01100") then                
@@ -1147,7 +1154,7 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); -- Rn 
                 imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                 imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));  
-                cortex_m0_opcode <= "STM " & Rd_decode & ",{" & imm8_decode & "}"  & "     ";                                   
+                cortex_m0_opcode <= "STM " & Rn_decode & "!,{" & imm8_decode & "}"  & "    ";                                   
               
            end if;
         end if;
