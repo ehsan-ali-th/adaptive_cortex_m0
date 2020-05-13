@@ -186,6 +186,20 @@ architecture Behavioral of cortex_m0_core is
                ones : out STD_LOGIC_VECTOR (3 downto 0));
     end component;
     
+    component hrdata_bus_master is
+         Port (
+             clk : in std_logic;
+             reset : in std_logic;
+             gp_data_in_ctrl : in gp_data_in_ctrl_t;	
+             hrdata : in std_logic_vector(31 downto 0);	
+             hrdata_progrm_value : out std_logic_vector(31 downto 0);	
+             hrdata_data_value : out std_logic_vector(31 downto 0);	
+             ldm_hrdata_value : out std_logic_vector(31 downto 0);	
+             SP_main_init : out std_logic_vector(31 downto 0);	
+             PC_init : out std_logic_vector(31 downto 0)	
+         );
+    end component;
+    
     -- Declare clock interface
     ATTRIBUTE X_INTERFACE_INFO : STRING;
     ATTRIBUTE X_INTERFACE_INFO of HCLK: SIGNAL is "xilinx.com:signal:clock:1.0 HCLK CLK";
@@ -219,6 +233,8 @@ architecture Behavioral of cortex_m0_core is
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
     signal internal_reset: std_logic := '1';
     signal VT_addr : std_logic_vector(31 downto 0);
+	signal hrdata_NC : std_logic_vector(31 downto 0);			-- HRDATA Not Connected
+    
     
    
 	-- Registers after decoder
@@ -426,6 +442,18 @@ begin
                            ones => number_of_ones_initial
         );    
         
+     hrdata_bus_master_m0: hrdata_bus_master  port map (
+             clk => HCLK,
+             reset => internal_reset,
+             gp_data_in_ctrl => gp_data_in_ctrl,
+             hrdata => HRDATA, 
+             hrdata_progrm_value => hrdata_progrm_value,
+             hrdata_data_value => hrdata_data_value,
+             ldm_hrdata_value => ldm_hrdata_value,
+             SP_main_init => SP_main_init,
+             PC_init => PC_init
+         );
+        
     LDM_total_bytes_read <= std_logic_vector (shift_left(unsigned('0' & number_of_ones_initial), 2)); --     
         
     ---------------------------------------------------------------------------------------
@@ -457,18 +485,18 @@ begin
         end case; 
     end process;    
         
-    hrdata_p: process (gp_data_in_ctrl, HRDATA) begin
-        case (gp_data_in_ctrl) is 
-            when sel_ALU_RESULT         => hrdata_progrm_value  <= HRDATA;
-            when sel_HRDATA_VALUE_SIZED => hrdata_data_value    <= HRDATA; 
-            when sel_LDM_DATA           => ldm_hrdata_value     <= HRDATA; 
-            when sel_LDM_Rn             => hrdata_progrm_value  <= HRDATA;
-            when sel_SP_main_init       => SP_main_init         <= HRDATA;
-            when sel_PC_init            => PC_init              <= HRDATA;
-            when sel_STM_DATA           =>
-            when others                 => hrdata_progrm_value  <= HRDATA; report " hrdata demux error." severity failure;
-        end case;
-    end process;
+--    hrdata_p: process (gp_data_in_ctrl, HRDATA) begin
+--          case (gp_data_in_ctrl) is 
+--            when sel_ALU_RESULT         => hrdata_progrm_value  <= HRDATA;
+--            when sel_HRDATA_VALUE_SIZED => hrdata_data_value    <= HRDATA; 
+--            when sel_LDM_DATA           => ldm_hrdata_value     <= HRDATA; 
+--            when sel_LDM_Rn             => hrdata_progrm_value  <= HRDATA;
+--            when sel_SP_main_init       => SP_main_init         <= HRDATA;
+--            when sel_PC_init            => PC_init              <= HRDATA;
+--            when sel_STM_DATA           => hrdata_NC            <= HRDATA;
+--            when others                 => hrdata_NC            <= HRDATA; report " hrdata demux error." severity failure;
+--        end case;
+--    end process;
     
     HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_STM_mem_addr, VT_addr) begin
         case (haddr_ctrl) is
@@ -546,7 +574,7 @@ begin
             when sel_LDM_Rn             => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when sel_SP_main_init       => gp_data_in <= result;
             when sel_PC_init            => gp_data_in <= result;
-            when sel_STM_DATA           => gp_data_in <= x"0000_0000";
+            when sel_STM_DATA           => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when others                 => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;

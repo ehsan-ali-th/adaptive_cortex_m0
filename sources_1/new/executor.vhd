@@ -102,7 +102,7 @@ begin
     
     -- This process  flushes the pipeline if PC gets updated.
     WE_p: process  (WE_val, gp_data_in_ctrl, access_mem, disable_executor) begin
-        if (gp_data_in_ctrl = sel_HRDATA_VALUE_SIZED or gp_data_in_ctrl = sel_LDM_DATA or gp_data_in_ctrl = sel_LDM_Rn) then
+        if (gp_data_in_ctrl = sel_HRDATA_VALUE_SIZED or gp_data_in_ctrl = sel_LDM_DATA or gp_data_in_ctrl = sel_LDM_Rn or gp_data_in_ctrl = sel_STM_DATA) then
             WE <= '1';
         elsif (access_mem = true or disable_executor = true) then
              WE <= '0';   
@@ -463,7 +463,10 @@ begin
             -------------------------------------------------------------------------------------- --  STR <Rt>,[SP,#<imm8>]            
             -------------------------------------------------------------------------------------- --  STM <Rn>!,<registers>            
             when STR_imm5 | STRH_imm5 | STRB_imm5 | STR | STRH | STRB | STR_SP_imm8 | STM =>
-                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used               
+                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used   
+                 
+            when PUSH =>
+                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used                       
              
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when NOP =>

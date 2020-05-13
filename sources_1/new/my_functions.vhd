@@ -53,8 +53,6 @@ package helper_funcs is
 
     type core_state_t is (
         s_RESET, 
-        s_RESET1, 
-        s_RESET2, 
         s_SET_SP,
         s_FETCH_PC,
         s_SET_PC,
@@ -103,6 +101,7 @@ package helper_funcs is
         LDRSB, LDR_label,   LDM,
         STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
                STR_SP_imm8, STM,
+        PUSH,       
         NOP,
         NOT_DEF
         );  

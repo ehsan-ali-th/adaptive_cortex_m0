@@ -134,18 +134,27 @@ begin
         if (reset = '1') then
              m0_core_state <= s_RESET;
              LDM_STM_counter <= (others => '0');
-             LDM_STM_read_counter <= (others => '0');
         else
             if (rising_edge(clk)) then
                   m0_core_state <= m0_core_next_state;
                   LDM_STM_counter <= LDM_STM_counter_value;
-                  if (m0_core_state = s_RUN or m0_core_state = s_DATA_MEM_ACCESS_LDM or m0_core_state = s_DATA_REG_ACCESS_STM) then
-                    LDM_STM_read_counter <= (others => '0');  
-                  elsif (LDM_access_mem = true) then
-                    LDM_STM_read_counter <= LDM_STM_read_counter + 1;        
-                  end if;
             end if;                       
         end if;
+    end process;
+    
+    
+    LDM_STM_read_counter_p: process (clk) begin
+         if (reset = '1') then
+            LDM_STM_read_counter <= (others => '0');
+         else
+            if (rising_edge(clk)) then             
+                if (m0_core_next_state = s_RUN or m0_core_next_state = s_DATA_MEM_ACCESS_LDM or m0_core_next_state = s_DATA_REG_ACCESS_STM) then
+                    LDM_STM_read_counter <= (others => '0');  
+                elsif (any_access_mem = true) then
+                    LDM_STM_read_counter <= LDM_STM_read_counter + 1;        
+                end if;
+            end if;    
+         end if;      
     end process;
     
     size_of_executed_instruction_p: process (instruction_size) begin
@@ -496,32 +505,10 @@ begin
         case (m0_core_state) is
             when s_RESET => 
                 refetch_i <= false; 
-                gp_data_in_ctrl <= sel_ALU_RESULT; 
+                gp_data_in_ctrl <= sel_SP_main_init; 
                 disable_fetch <= false; 
                 disable_executor <= true; 
                 haddr_ctrl <= sel_PC;
-                gp_addrA_executor_ctrl <= false; 
-                LDM_cur_target_reg <= NONE;
-                LDM_STM_capture_base <= false; 
-                HWRITE <= '0'; 
-                VT_ctrl <= VT_NONE;
-            when s_RESET1 => 
-                refetch_i <= false; 
-                gp_data_in_ctrl <= sel_ALU_RESULT; 
-                disable_fetch <= false;
-                disable_executor <= true; 
-                haddr_ctrl <= sel_PC; 
-                gp_addrA_executor_ctrl <= false; 
-                LDM_cur_target_reg <= NONE;
-                LDM_STM_capture_base <= false; 
-                HWRITE <= '0'; 
-                VT_ctrl <= VT_NONE;
-            when s_RESET2 => 
-                refetch_i <= false; 
-                gp_data_in_ctrl <= sel_ALU_RESULT; 
-                disable_fetch <= false; 
-                disable_executor <= true; 
-                haddr_ctrl <= sel_PC; 
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 LDM_STM_capture_base <= false; 
@@ -694,15 +681,16 @@ begin
                 if (LDM_STM_counter_value = 1) then
                     -- it means the LDM instruction has only 1 register in its register_list
                     -- therefor we have to finish the LDM in next cycle.
-                    disable_fetch <= false;
                     refetch_i <= false;
+                    disable_fetch <= any_access_mem; 
+                    gp_data_in_ctrl <= sel_LDM_Rn; 
                 else
                     refetch_i <= true;
                     disable_fetch <= true;
+                    gp_data_in_ctrl <= sel_STM_DATA; 
                 end if;
-                gp_data_in_ctrl <= sel_LDM_Rn; 
-                disable_executor <= true; 
                 haddr_ctrl <= sel_LDM;
+                disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
                 LDM_cur_target_reg <= NONE;
                 HWRITE <= '0'; 
@@ -713,21 +701,23 @@ begin
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
-                elsif (LDM_STM_counter = 2) then     -- two states before the end of LDM is over
-                    refetch_i <= false; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
+                elsif (LDM_STM_counter = 2) then
+                    refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
@@ -735,24 +725,26 @@ begin
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 1) & "0");   
                 LDM_STM_capture_base <= false; 
-                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
+                if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
-                 elsif (LDM_STM_counter = 2) then
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
+                elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
-                 else
+                else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
@@ -763,21 +755,23 @@ begin
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
@@ -785,24 +779,26 @@ begin
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 3) & "000");  
                 LDM_STM_capture_base <= false; 
-                  if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
+                if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
@@ -810,24 +806,26 @@ begin
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 4) & "0000");   
                 LDM_STM_capture_base <= false; 
-                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
+                if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
@@ -838,21 +836,23 @@ begin
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
-                    haddr_ctrl <= sel_LDM;
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
@@ -860,24 +860,26 @@ begin
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
                 LDM_cur_target_reg <= set_LDM_target_reg (imm8(7 downto 6) & "000000");   
                 LDM_STM_capture_base <= false; 
-                  if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
+                if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
                     disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
+                    gp_data_in_ctrl <= sel_LDM_DATA; 
+                    haddr_ctrl <= sel_PC;
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
@@ -887,22 +889,28 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    disable_fetch <= any_access_mem; 
-                    haddr_ctrl <= sel_PC; 
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem; 
+                    end if;
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
+                    haddr_ctrl <= sel_PC;
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
+                    gp_data_in_ctrl <= sel_LDM_DATA;  
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
                 disable_executor <= false; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
@@ -912,13 +920,13 @@ begin
                 if (LDM_STM_counter_value = 1) then
                     -- it means the LDM instruction has only 1 register in its register_list
                     -- therefor we have to finish the LDM in next cycle.
-                    disable_fetch <= false;
+                    disable_fetch <= any_access_mem; 
                     refetch_i <= false;
                 else
                     refetch_i <= true;
                     disable_fetch <= true;
                 end if;
-                gp_data_in_ctrl <= sel_STM_DATA; 
+                gp_data_in_ctrl <= sel_LDM_Rn; 
                 disable_executor <= true; 
                 haddr_ctrl <= sel_STM;
                 gp_addrA_executor_ctrl <= false; 
@@ -930,16 +938,14 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                     if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if;
-                   
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then     -- two states before the end of LDM is over
                     refetch_i <= false; 
-                    disable_fetch <= false; 
-                    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if;  
                 else
                     refetch_i <= true; 
                     disable_fetch <= true; 
@@ -955,17 +961,13 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if;
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
                 else
                     refetch_i <= true; 
@@ -982,17 +984,13 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if; 
+                    disable_fetch <= any_access_mem;  
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if;
                 else
                     refetch_i <= true; 
@@ -1009,17 +1007,13 @@ begin
                 LDM_STM_capture_base <= false; 
                   if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if; 
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
                 else
                     refetch_i <= true; 
@@ -1036,17 +1030,13 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if; 
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
                 else
                     refetch_i <= true; 
@@ -1063,17 +1053,13 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if;
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
                 else
                     refetch_i <= true; 
@@ -1090,17 +1076,13 @@ begin
                 LDM_STM_capture_base <= false; 
                   if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if; 
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
                 else
                     refetch_i <= true; 
@@ -1117,17 +1099,13 @@ begin
                 LDM_STM_capture_base <= false; 
                 if (LDM_STM_counter = 1) then         -- one state before the end of LDM is over
                     refetch_i <= any_access_mem; 
-                    if (PC(1) = '1') then
-                        disable_fetch <= false;
-                    else
-                        disable_fetch <= any_access_mem; 
-                    end if; 
+                    disable_fetch <= any_access_mem; 
                 elsif (LDM_STM_counter = 2) then
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
-                        disable_fetch <= LDM_access_mem;
+                        disable_fetch <= any_access_mem;
                     end if; 
                 else
                     refetch_i <= true; 

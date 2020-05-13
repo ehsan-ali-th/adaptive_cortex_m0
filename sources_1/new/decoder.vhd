@@ -800,10 +800,10 @@ begin
             ----------------------------------------------------------------------------------- -- STM <Rn>!,<registers>
             elsif (std_match(opcode, "11000-"))  then       
                 gp_WR_addr <= B"0000";
-                gp_addrA <= '0' & instruction (10 downto 8);             -- Rn        
+                gp_addrA <= '0' & instruction (10 downto 8);            -- Rn        
                 gp_addrB <= B"0000";   
                 gp_addrC <=  B"0000";                                   -- Will not be used '0' 
-                imm8 <= instruction (7 downto 0);                        -- imm8 = <registers>
+                imm8 <= instruction (7 downto 0);                       -- imm8 = <registers>
                 execution_cmd <= STM;
                 destination_is_PC <= false;   
                 access_mem <= true;    
@@ -811,6 +811,21 @@ begin
                 mem_load_size <= WORD;
                 mem_load_sign_ext <= false;   
                 LDM_access_mem <= true;     
+                access_mem_mode <= MEM_ACCESS_WRITE;
+            ----------------------------------------------------------------------------------- -- PUSH <registers>
+            elsif (std_match(opcode, "101101") and instruction(9) = '0')  then       
+                gp_WR_addr <= B"0000";
+                gp_addrA <= B"0000_000" & instruction (8);              -- LM        
+                gp_addrB <= B"0000";   
+                gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                imm8 <= instruction (7 downto 0);                       -- imm8 = <registers>
+                execution_cmd <= PUSH;
+                destination_is_PC <= false;   
+                access_mem <= true;    
+                use_base_register <= false;   
+                mem_load_size <= WORD;
+                mem_load_sign_ext <= false;   
+                LDM_access_mem <= false;     
                 access_mem_mode <= MEM_ACCESS_WRITE;
             else
                 null;    
