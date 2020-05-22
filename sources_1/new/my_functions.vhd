@@ -84,7 +84,17 @@ package helper_funcs is
         s_DATA_REG_ACCESS_EXECUTE_STM_R4,
         s_DATA_REG_ACCESS_EXECUTE_STM_R5,
         s_DATA_REG_ACCESS_EXECUTE_STM_R6,
-        s_DATA_REG_ACCESS_EXECUTE_STM_R7
+        s_DATA_REG_ACCESS_EXECUTE_STM_R7,
+        s_FINISH_PUSH,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R0,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R1,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R2,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R3,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R4,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R5,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R6,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_R7,
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_LM
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -146,15 +156,16 @@ package helper_funcs is
     );    
 
     type low_register_t is (
-        R0, 
-        R1, 
-        R2, 
-        R3, 
-        R4, 
-        R5, 
-        R6, 
-        R7,
-        NONE 
+        REG_R0, 
+        REG_R1, 
+        REG_R2, 
+        REG_R3, 
+        REG_R4, 
+        REG_R5, 
+        REG_R6, 
+        REG_R7,
+        REG_LM,
+        REG_NONE 
    );   
    
    type access_mem_mode_t is (
@@ -188,14 +199,16 @@ package helper_funcs is
         address : in std_logic_vector (31 downto 0);
         size : in integer) return boolean;
     
-    function set_LDM_target_reg (imm8 : in std_logic_vector (7 downto 0)) return low_register_t;   
+  
     
     function run_next_state_calc (
         access_mem      : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean; 
-        imm8            : std_logic_vector (7 downto 0)) return  core_state_t; 
+        imm8            : std_logic_vector (7 downto 0);
+        LM              : std_logic) return  core_state_t; 
+        
         
 
 end  helper_funcs;
@@ -292,37 +305,15 @@ package body helper_funcs is
        return ret; 
     end function;
     
-    function set_LDM_target_reg (imm8 : in std_logic_vector (7 downto 0)) return low_register_t is
-        variable target_reg : low_register_t;
-    begin
-        if    (imm8(0) = '1') then
-            target_reg := R0;
-        elsif (imm8(1) = '1') then   
-            target_reg := R1;
-        elsif (imm8(2) = '1') then   
-            target_reg := R2;
-        elsif (imm8(3) = '1') then   
-            target_reg := R3;
-        elsif (imm8(4) = '1') then   
-            target_reg := R4;
-        elsif (imm8(5) = '1') then   
-            target_reg := R5;
-        elsif (imm8(6) = '1') then   
-            target_reg := R6;
-        elsif (imm8(7) = '1') then   
-            target_reg := R7;
-        else
-            target_reg := NONE;    
-        end if;  
-        return target_reg;    
-    end function;
+   
     
      function run_next_state_calc (
         access_mem      : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean;
-        imm8            : std_logic_vector (7 downto 0) ) return core_state_t is
+        imm8            : std_logic_vector (7 downto 0);
+        LM              : std_logic) return core_state_t is
         variable next_state : core_state_t;
       begin
             -- If you modify something here then remember to copy it to s_FINISH_STM
@@ -355,6 +346,28 @@ package body helper_funcs is
                         else
                             next_state := s_FINISH_STM;
                         end if;
+                    elsif (execution_cmd = PUSH) then
+                        if (imm8(0) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;
+                        elsif (imm8(1) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                        elsif (imm8(2) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                        elsif (imm8(3) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
+                        elsif (imm8(4) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
+                        elsif (imm8(5) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
+                        elsif (imm8(6) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
+                        elsif (imm8(7) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
+                        elsif (LM = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_LM;     
+                        else
+                            next_state := s_FINISH_STM;
+                        end if;    
                     else
                         next_state := s_DATA_MEM_ACCESS_W;
                     end if; 

@@ -103,6 +103,7 @@ architecture Behavioral of cortex_m0_core is
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrC : out std_logic_vector (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
+        LM : out std_logic;
         execution_cmd: out executor_cmds_t;
         access_mem: out boolean;
         use_base_register : out boolean;
@@ -143,6 +144,7 @@ architecture Behavioral of cortex_m0_core is
             access_mem : in boolean;
             PC_updated : in boolean;
             imm8 : in std_logic_vector (7 downto 0);
+            LM : in std_logic;
             number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
             execution_cmd : in executor_cmds_t;
             LDM_STM_access_mem : in boolean;
@@ -257,6 +259,7 @@ architecture Behavioral of cortex_m0_core is
    
     -- decoder signals
     signal imm8 : std_logic_vector (7 downto 0);
+    signal LM : std_logic;	
 	signal WE : std_logic;	
 	signal use_PC : boolean;
     signal access_mem : boolean;
@@ -368,6 +371,7 @@ begin
                        gp_addrB => gp_addrB_value,
                        gp_addrC => gp_addrC_value,
                            imm8 => imm8,
+                             LM => LM,
                   execution_cmd => command_value,
                      access_mem => access_mem_value,
               use_base_register => use_base_register,
@@ -404,6 +408,7 @@ begin
                      access_mem => access_mem_value,
                      PC_updated => PC_updated,
                            imm8 => imm8_z_ext_value(7 downto 0),
+                             LM => LM,
          number_of_ones_initial => number_of_ones_initial,
                   execution_cmd => command_value,
              LDM_STM_access_mem => LDM_STM_access_mem_value,
