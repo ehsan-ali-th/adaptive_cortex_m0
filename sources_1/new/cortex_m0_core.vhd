@@ -108,7 +108,7 @@ architecture Behavioral of cortex_m0_core is
         use_base_register : out boolean;
         mem_load_size : out mem_op_size_t;
         mem_load_sign_ext : out boolean;
-        LDM_access_mem : out boolean;
+        LDM_STM_access_mem : out boolean;
         access_mem_mode : out access_mem_mode_t
     );
     end component;
@@ -145,7 +145,7 @@ architecture Behavioral of cortex_m0_core is
             imm8 : in std_logic_vector (7 downto 0);
             number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
             execution_cmd : in executor_cmds_t;
-            LDM_access_mem : in boolean;
+            LDM_STM_access_mem : in boolean;
             new_PC : in std_logic_vector (31 downto 0);
             access_mem_mode : IN access_mem_mode_t;
             SP_main_init : in std_logic_vector (31 downto 0);
@@ -157,6 +157,7 @@ architecture Behavioral of cortex_m0_core is
             PC_after_execute :  out std_logic_vector (31 downto 0);
             LDM_STM_mem_address_index :  out unsigned (4 downto 0); 
             gp_data_in_ctrl : out gp_data_in_ctrl_t;
+            hrdata_ctrl : out hrdata_ctrl_t;
             disable_fetch : out boolean;
             haddr_ctrl : out haddr_ctrl_t; 
             disable_executor : out boolean;
@@ -190,7 +191,7 @@ architecture Behavioral of cortex_m0_core is
          Port (
              clk : in std_logic;
              reset : in std_logic;
-             gp_data_in_ctrl : in gp_data_in_ctrl_t;	
+             hrdata_ctrl : in hrdata_ctrl_t;	
              hrdata : in std_logic_vector(31 downto 0);	
              hrdata_progrm_value : out std_logic_vector(31 downto 0);	
              hrdata_data_value : out std_logic_vector(31 downto 0);	
@@ -266,8 +267,8 @@ architecture Behavioral of cortex_m0_core is
 	signal mem_load_size_value : mem_op_size_t;	
 	signal mem_load_sign_ext : boolean;
 	signal mem_load_sign_ext_value : boolean;
-	signal LDM_access_mem : boolean;
-	signal LDM_access_mem_value : boolean;
+	signal LDM_STM_access_mem : boolean;
+	signal LDM_STM_access_mem_value : boolean;
 	signal access_mem_mode : access_mem_mode_t;
 	
 
@@ -288,6 +289,7 @@ architecture Behavioral of cortex_m0_core is
     signal instr_ptr : std_logic;
     signal disable_fetch : boolean;
     signal gp_data_in_ctrl : gp_data_in_ctrl_t;
+    signal hrdata_ctrl : hrdata_ctrl_t;
     signal haddr_ctrl : haddr_ctrl_t;
     signal disable_executor : boolean;
     signal gp_addrA_executor_ctrl : boolean;
@@ -371,7 +373,7 @@ begin
               use_base_register => use_base_register,
                   mem_load_size => mem_load_size_value,
               mem_load_sign_ext => mem_load_sign_ext_value,
-                 LDM_access_mem => LDM_access_mem_value,
+                 LDM_STM_access_mem => LDM_STM_access_mem_value,
                 access_mem_mode => access_mem_mode
         );
     
@@ -401,10 +403,10 @@ begin
                instruction_size => instruction_size,
                      access_mem => access_mem_value,
                      PC_updated => PC_updated,
-                           imm8 => imm8_z_ext(7 downto 0),
+                           imm8 => imm8_z_ext_value(7 downto 0),
          number_of_ones_initial => number_of_ones_initial,
                   execution_cmd => command_value,
-                 LDM_access_mem => LDM_access_mem_value,
+             LDM_STM_access_mem => LDM_STM_access_mem_value,
                          new_PC => result, 
                 access_mem_mode => access_mem_mode,
                    SP_main_init => SP_main_init,
@@ -416,6 +418,7 @@ begin
                PC_after_execute => PC_after_execute,
       LDM_STM_mem_address_index => LDM_STM_mem_address_index,
                 gp_data_in_ctrl => gp_data_in_ctrl,
+                    hrdata_ctrl => hrdata_ctrl,
                   disable_fetch => disable_fetch,
                      haddr_ctrl => haddr_ctrl,
                disable_executor => disable_executor,
@@ -445,7 +448,7 @@ begin
      hrdata_bus_master_m0: hrdata_bus_master  port map (
              clk => HCLK,
              reset => internal_reset,
-             gp_data_in_ctrl => gp_data_in_ctrl,
+             hrdata_ctrl => hrdata_ctrl,
              hrdata => HRDATA, 
              hrdata_progrm_value => hrdata_progrm_value,
              hrdata_data_value => hrdata_data_value,
@@ -485,20 +488,9 @@ begin
         end case; 
     end process;    
         
---    hrdata_p: process (gp_data_in_ctrl, HRDATA) begin
---          case (gp_data_in_ctrl) is 
---            when sel_ALU_RESULT         => hrdata_progrm_value  <= HRDATA;
---            when sel_HRDATA_VALUE_SIZED => hrdata_data_value    <= HRDATA; 
---            when sel_LDM_DATA           => ldm_hrdata_value     <= HRDATA; 
---            when sel_LDM_Rn             => hrdata_progrm_value  <= HRDATA;
---            when sel_SP_main_init       => SP_main_init         <= HRDATA;
---            when sel_PC_init            => PC_init              <= HRDATA;
---            when sel_STM_DATA           => hrdata_NC            <= HRDATA;
---            when others                 => hrdata_NC            <= HRDATA; report " hrdata demux error." severity failure;
---        end case;
---    end process;
+  
     
-    HADDR_p : process (LDM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_STM_mem_addr, VT_addr) begin
+    HADDR_p : process (LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_STM_mem_addr, VT_addr) begin
         case (haddr_ctrl) is
             when              sel_PC =>  HADDR <= PC(31 downto 2) & B"00";  
             when            sel_DATA =>  HADDR <= data_memory_addr;
@@ -509,7 +501,7 @@ begin
         end case;
     end process;   
    
-   LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
+    LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
     
     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -554,8 +546,8 @@ begin
     --- Hardware which drives (Register) module input pins
     ---------------------------------------------------------------------------------------
     
-     gp_WR_addr_final_p: process (LDM_access_mem, LDM_W_STM_R_reg, gp_WR_addr, disable_executor, gp_AddrA) begin
-         if (LDM_access_mem = true) then
+     gp_WR_addr_final_p: process (LDM_STM_access_mem, LDM_W_STM_R_reg, gp_WR_addr, disable_executor, gp_AddrA) begin
+         if (LDM_STM_access_mem = true) then
             if (disable_executor = true) then 
                 gp_WR_addr_final <= gp_AddrA;       -- Save the Rn in LDM instruction into gp_AddrA register.
             else 
@@ -568,14 +560,15 @@ begin
     
      gp_data_in_p: process (gp_data_in_ctrl, result, hrdata_data_value_sized, ldm_hrdata_value, LDM_total_bytes_read, gp_ram_dataA) begin
         case (gp_data_in_ctrl) is 
-            when sel_ALU_RESULT         => gp_data_in <= result;
-            when sel_HRDATA_VALUE_SIZED => gp_data_in <= hrdata_data_value_sized;  
-            when sel_LDM_DATA           => gp_data_in <= ldm_hrdata_value;
-            when sel_LDM_Rn             => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
-            when sel_SP_main_init       => gp_data_in <= result;
-            when sel_PC_init            => gp_data_in <= result;
-            when sel_STM_DATA           => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
-            when others                 => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
+            when sel_ALU_RESULT             => gp_data_in <= result;
+            when sel_HRDATA_VALUE_SIZED     => gp_data_in <= hrdata_data_value_sized;  
+            when sel_LDM_DATA               => gp_data_in <= ldm_hrdata_value;
+            when sel_LDM_Rn                 => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
+            when sel_SP_main_init           => gp_data_in <= result;
+            when sel_PC_init                => gp_data_in <= result;
+            when sel_STM_total_bytes_wrote  => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
+            when sel_gp_data_in_NC          => gp_data_in <= (others => '0');
+            when others                     => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;
     
@@ -836,7 +829,7 @@ begin
             data_memory_addr <= (others => '0');
             LDR_mul_result <= (others => '0');
             mem_load_sign_ext <= false;
-            LDM_access_mem <= false;
+            LDM_STM_access_mem <= false;
         else
             if (rising_edge(HCLK)) then
                     imm8_z_ext <= imm8_z_ext_value;
@@ -849,7 +842,7 @@ begin
                     data_memory_addr <= data_memory_addr_value;
                     LDR_mul_result <= LDR_mul_result_value;
                     mem_load_sign_ext <= mem_load_sign_ext_value;
-                    LDM_access_mem <= LDM_access_mem_value;
+                    LDM_STM_access_mem <= LDM_STM_access_mem_value;
                 if (disable_fetch = false) then
                     access_mem <= access_mem_value;
                     hrdata_data <= hrdata_data_value; 
@@ -1107,7 +1100,7 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 
                 Rm_decode(2) := hexcharacter ('0' & current_instruction (8 downto 6)); -- Rm 
                 cortex_m0_opcode <= "LDRH " & Rd_decode & ",[" & Rn_decode & "," & Rm_decode & "]  ";                  
-           -------------------------------------------------------------------------------------- -- LDRSH <Rt>,[<Rn>,<Rm>]
+           ------------------------------------------------------------------------------------- -- LDRSH <Rt>,[<Rn>,<Rm>]
            elsif std_match(current_instruction(15 downto 9), "0101111") then                
                 Rd_decode(2) := hexcharacter ('0' & current_instruction (2 downto 0)); -- Rt
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (5 downto 3)); -- Rn 

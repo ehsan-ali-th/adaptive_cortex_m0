@@ -76,7 +76,7 @@ package helper_funcs is
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R5,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R6,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R7,
-        s_DATA_REG_ACCESS_STM,
+        s_FINISH_STM,
         s_DATA_REG_ACCESS_EXECUTE_STM_R0,
         s_DATA_REG_ACCESS_EXECUTE_STM_R1,
         s_DATA_REG_ACCESS_EXECUTE_STM_R2,
@@ -126,11 +126,24 @@ package helper_funcs is
         sel_ALU_RESULT,
         sel_HRDATA_VALUE_SIZED,
         sel_LDM_DATA,
-        sel_STM_DATA,
+        sel_STM_total_bytes_wrote,
         sel_LDM_Rn,
         sel_SP_main_init,
-        sel_PC_init
-    );  
+        sel_PC_init,
+        sel_gp_data_in_NC
+    );
+    
+    type hrdata_ctrl_t is (
+        sel_ALU_RESULT,
+        sel_HRDATA_VALUE_SIZED,
+        sel_LDM_DATA,
+        sel_STM_total_bytes_wrote,
+        sel_LDM_Rn,
+        sel_SP_main_init,
+        sel_PC_init,
+        sel_gp_data_in_NC,
+        sel_NC
+    );    
 
     type low_register_t is (
         R0, 
@@ -181,7 +194,9 @@ package helper_funcs is
         access_mem      : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
-        PC_updated      : boolean ) return  core_state_t; 
+        PC_updated      : boolean; 
+        imm8            : std_logic_vector (7 downto 0)) return  core_state_t; 
+        
 
 end  helper_funcs;
 
@@ -306,10 +321,12 @@ package body helper_funcs is
         access_mem      : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
-        PC_updated      : boolean ) return core_state_t is
+        PC_updated      : boolean;
+        imm8            : std_logic_vector (7 downto 0) ) return core_state_t is
         variable next_state : core_state_t;
       begin
-             -- CHECK if instruction needs memory access
+            -- If you modify something here then remember to copy it to s_FINISH_STM
+            -- CHECK if instruction needs memory access
             if (access_mem = true) then 
                 if (access_mem_mode = MEM_ACCESS_READ) then 
                     if (execution_cmd = LDM) then
@@ -319,7 +336,25 @@ package body helper_funcs is
                     end if;  
                 elsif (access_mem_mode = MEM_ACCESS_WRITE) then
                     if (execution_cmd = STM) then
-                        next_state := s_DATA_REG_ACCESS_STM;
+                        if (imm8(0) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R0;
+                        elsif (imm8(1) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R1;
+                        elsif (imm8(2) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R2;
+                        elsif (imm8(3) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R3;
+                        elsif (imm8(4) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R4;
+                        elsif (imm8(5) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R5;
+                        elsif (imm8(6) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R6;
+                        elsif (imm8(7) = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_STM_R7;
+                        else
+                            next_state := s_FINISH_STM;
+                        end if;
                     else
                         next_state := s_DATA_MEM_ACCESS_W;
                     end if; 

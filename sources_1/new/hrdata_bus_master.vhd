@@ -38,7 +38,7 @@ entity hrdata_bus_master is
  Port (
          clk : in std_logic;
          reset : in std_logic;
-         gp_data_in_ctrl : in gp_data_in_ctrl_t;	
+         hrdata_ctrl : in hrdata_ctrl_t;	
          hrdata : in std_logic_vector(31 downto 0);	
          hrdata_progrm_value : out std_logic_vector(31 downto 0);	
          hrdata_data_value : out std_logic_vector(31 downto 0);	
@@ -64,13 +64,11 @@ architecture Behavioral of hrdata_bus_master is
 
          signal PC_init_cur :  std_logic_vector(31 downto 0);
          signal PC_init_ns :  std_logic_vector(31 downto 0);
-         
-       
-
+ 
 begin
     
-        hrdata_progrm_value_p : process (gp_data_in_ctrl, hrdata, hrdata_progrm_value_cur) begin
-            if (gp_data_in_ctrl = sel_ALU_RESULT or gp_data_in_ctrl = sel_LDM_Rn) then
+        hrdata_progrm_value_p : process (hrdata_ctrl, hrdata, hrdata_progrm_value_cur) begin
+            if (hrdata_ctrl = sel_ALU_RESULT or hrdata_ctrl = sel_LDM_Rn) then
                 hrdata_progrm_value     <= hrdata;
                 hrdata_progrm_value_ns  <= hrdata;
             else
@@ -79,8 +77,8 @@ begin
             end if;
         end process;
         
-        hrdata_data_value_p : process (gp_data_in_ctrl, hrdata, hrdata_data_value_cur) begin
-            if (gp_data_in_ctrl = sel_HRDATA_VALUE_SIZED) then
+        hrdata_data_value_p : process (hrdata_ctrl, hrdata, hrdata_data_value_cur) begin
+            if (hrdata_ctrl = sel_HRDATA_VALUE_SIZED) then
                 hrdata_data_value     <= hrdata;
                 hrdata_data_value_ns  <= hrdata;
             else
@@ -89,8 +87,8 @@ begin
             end if;
         end process;
 
-        ldm_hrdata_value_p : process (gp_data_in_ctrl, hrdata, ldm_hrdata_value_cur) begin
-            if (gp_data_in_ctrl = sel_LDM_DATA) then
+        ldm_hrdata_value_p : process (hrdata_ctrl, hrdata, ldm_hrdata_value_cur) begin
+            if (hrdata_ctrl = sel_LDM_DATA) then
                 ldm_hrdata_value     <= hrdata;
                 ldm_hrdata_value_ns  <= hrdata;
             else
@@ -99,8 +97,8 @@ begin
             end if;
         end process;
 
-        SP_main_init_p : process (gp_data_in_ctrl, hrdata, SP_main_init_cur) begin
-            if (gp_data_in_ctrl = sel_SP_main_init) then
+        SP_main_init_p : process (hrdata_ctrl, hrdata, SP_main_init_cur) begin
+            if (hrdata_ctrl = sel_SP_main_init) then
                 SP_main_init     <= hrdata;
                 SP_main_init_ns  <= hrdata;
             else
@@ -109,8 +107,8 @@ begin
             end if;
         end process;
         
-        PC_init_p : process (gp_data_in_ctrl, hrdata, PC_init_cur) begin
-            if (gp_data_in_ctrl = sel_PC_init) then
+        PC_init_p : process (hrdata_ctrl, hrdata, PC_init_cur) begin
+            if (hrdata_ctrl = sel_PC_init) then
                 PC_init     <= hrdata;
                 PC_init_ns  <= hrdata;
             else

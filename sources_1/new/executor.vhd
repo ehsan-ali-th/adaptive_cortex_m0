@@ -102,7 +102,10 @@ begin
     
     -- This process  flushes the pipeline if PC gets updated.
     WE_p: process  (WE_val, gp_data_in_ctrl, access_mem, disable_executor) begin
-        if (gp_data_in_ctrl = sel_HRDATA_VALUE_SIZED or gp_data_in_ctrl = sel_LDM_DATA or gp_data_in_ctrl = sel_LDM_Rn or gp_data_in_ctrl = sel_STM_DATA) then
+        if (gp_data_in_ctrl = sel_HRDATA_VALUE_SIZED or 
+            gp_data_in_ctrl = sel_LDM_DATA or 
+            gp_data_in_ctrl = sel_LDM_Rn or 
+            gp_data_in_ctrl = sel_STM_total_bytes_wrote) then
             WE <= '1';
         elsif (access_mem = true or disable_executor = true) then
              WE <= '0';   
