@@ -495,7 +495,8 @@ begin
         
   
     
-    HADDR_p : process (LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, PC(31 downto 2), LDM_STM_mem_addr, VT_addr) begin
+    HADDR_p : process ( LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, 
+                        PC(31 downto 2), LDM_STM_mem_addr, VT_addr, SP_main) begin
         case (haddr_ctrl) is
             when              sel_PC =>  HADDR <= PC(31 downto 2) & B"00";  
             when            sel_DATA =>  HADDR <= data_memory_addr;
@@ -503,6 +504,7 @@ begin
             when             sel_STM =>  HADDR <= std_logic_vector (LDM_STM_mem_addr);
             when           sel_WDATA =>  HADDR <= std_logic_vector (data_memory_addr_i);
             when    sel_VECTOR_TABLE =>  HADDR <= VT_addr;
+            when    sel_SP_main_addr =>  HADDR <= SP_main;
         end case;
     end process;   
    
@@ -573,6 +575,7 @@ begin
             when sel_PC_init                => gp_data_in <= result;
             when sel_STM_total_bytes_wrote  => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when sel_gp_data_in_NC          => gp_data_in <= (others => '0');
+            when sel_SP_set                 => gp_data_in <= (others => '0');
             when others                     => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;

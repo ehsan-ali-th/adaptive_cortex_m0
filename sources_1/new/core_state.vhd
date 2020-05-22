@@ -78,7 +78,6 @@ architecture Behavioral of core_state is
     signal SP_main_value :  std_logic_vector(31 downto 0);
 	signal refetch_i : boolean;
     signal LDM_counter : unsigned (3 downto 0);          -- Starts with the total number of target registers 
---    signal STM_counter : unsigned (3 downto 0);          -- Starts with the total number of target registers 
     signal LDM_counter_value : unsigned (3 downto 0);      
     signal STM_counter_value : unsigned (3 downto 0);      
     signal LDM_read_counter : unsigned (4 downto 0);    -- Starts with 0 and counts uo to the max no. of target registers
@@ -89,7 +88,6 @@ architecture Behavioral of core_state is
 begin
 
     any_access_mem <= access_mem or LDM_STM_access_mem;
-
 
     LDM_STM_mem_address_index_p: process (LDM_read_counter, execution_cmd) begin
         if (execution_cmd = LDM) then
@@ -136,7 +134,6 @@ begin
              if (refetch_i = false) then 
                     PC_value <= size_of_executed_instruction + unsigned (PC);
             end if;      
-            
         end if; 
     end process;
     
@@ -154,12 +151,10 @@ begin
         if (reset = '1') then
              m0_core_state <= s_RESET;
              LDM_counter <= (others => '0');
---             STM_counter <= (others => '0');
         else
             if (rising_edge(clk)) then
                   m0_core_state <= m0_core_next_state;
                   LDM_counter <= LDM_counter_value;
---                 STM_counter <= STM_counter_value;
             end if;                       
         end if;
     end process;
@@ -219,11 +214,11 @@ begin
     
     STM_counter_value_p: process (m0_core_state, number_of_ones_initial, LDM_counter) begin
         if (m0_core_state = s_RUN) then
-            stM_counter_value <= "0000";
+            STM_counter_value <= "0000";
         elsif (m0_core_state = s_DATA_MEM_ACCESS_LDM) then  
-            LDM_counter_value <= unsigned(number_of_ones_initial);
+            STM_counter_value <= unsigned(number_of_ones_initial);
         else    
-            LDM_counter_value <=  unsigned(LDM_counter) - 1;  
+            STM_counter_value <=  unsigned(LDM_counter) - 1;  
         end if;    
     end process;
     
@@ -1199,6 +1194,7 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
+                haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
@@ -1226,7 +1222,7 @@ begin
                     disable_fetch <= true; 
                 end if;
                 haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
+                gp_data_in_ctrl <= sel_gp_data_in_NC;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1284,21 +1280,21 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R0 =>  
-               LDM_cur_target_reg <= REG_R0;   
-               LDM_STM_capture_base <= true;
-               if (STM_counter_diff = 1) then         -- two states before the end of PUSH
+                LDM_cur_target_reg <= REG_R0;   
+                LDM_STM_capture_base <= true;
+                if (STM_counter_diff = 1) then         -- two states before the end of PUSH
                     refetch_i <= false;    
                     if (PC(1) = '1') then
                         disable_fetch <= false;
                     else
                         disable_fetch <= any_access_mem;
                     end if; 
-               else
+                else
                     refetch_i <= true; 
                     disable_fetch <= true; 
-               end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                end if;
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1308,7 +1304,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
@@ -1324,8 +1320,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1335,7 +1331,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
@@ -1351,8 +1347,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1362,7 +1358,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
@@ -1378,8 +1374,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1389,7 +1385,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
@@ -1405,8 +1401,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1416,7 +1412,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
@@ -1432,7 +1428,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1442,7 +1439,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
@@ -1458,8 +1455,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1469,7 +1466,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
@@ -1485,8 +1482,8 @@ begin
                     refetch_i <= true; 
                     disable_fetch <= true; 
                 end if;
-                haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                haddr_ctrl <= sel_SP_main_addr;
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;
@@ -1496,7 +1493,7 @@ begin
                 end if;    
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
-                HWRITE <= '1'; 
+                HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_LM =>  
                 LDM_cur_target_reg <= REG_LM;  
@@ -1513,7 +1510,7 @@ begin
                     disable_fetch <= true; 
                 end if;
                 haddr_ctrl <= sel_STM;
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                gp_data_in_ctrl <= sel_SP_set;  
                 if (STM_write_counter = 0 and PC_execute(1) = '0') then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_Rn;

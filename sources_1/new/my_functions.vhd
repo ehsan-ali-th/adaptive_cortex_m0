@@ -129,7 +129,8 @@ package helper_funcs is
         sel_LDM,                -- Put LDM_STM_mem_addr on the HADDR bus
         sel_STM,                -- Put LDM_STM_mem_addr on the HADDR bus
         sel_WDATA,              -- Put data on the HADDR to be written into memory
-        sel_VECTOR_TABLE    
+        sel_VECTOR_TABLE,
+        sel_SP_main_addr
     );   
    
     type gp_data_in_ctrl_t is (
@@ -139,6 +140,7 @@ package helper_funcs is
         sel_STM_total_bytes_wrote,
         sel_LDM_Rn,
         sel_SP_main_init,
+        sel_SP_set,
         sel_PC_init,
         sel_gp_data_in_NC
     );
@@ -198,9 +200,7 @@ package helper_funcs is
     function IsAligned (
         address : in std_logic_vector (31 downto 0);
         size : in integer) return boolean;
-    
-  
-    
+ 
     function run_next_state_calc (
         access_mem      : boolean; 
         access_mem_mode : access_mem_mode_t;
@@ -208,9 +208,7 @@ package helper_funcs is
         PC_updated      : boolean; 
         imm8            : std_logic_vector (7 downto 0);
         LM              : std_logic) return  core_state_t; 
-        
-        
-
+  
 end  helper_funcs;
 
 package body helper_funcs is
