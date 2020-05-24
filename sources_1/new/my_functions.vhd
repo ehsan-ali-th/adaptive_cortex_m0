@@ -94,7 +94,7 @@ package helper_funcs is
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R5,
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R6,
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R7,
-        s_DATA_REG_ACCESS_EXECUTE_PUSH_LM
+        s_DATA_REG_ACCESS_EXECUTE_PUSH_LR
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -166,7 +166,7 @@ package helper_funcs is
         REG_R5, 
         REG_R6, 
         REG_R7,
-        REG_LM,
+        REG_LR,
         REG_NONE 
    );   
    
@@ -207,7 +207,7 @@ package helper_funcs is
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean; 
         imm8            : std_logic_vector (7 downto 0);
-        LM              : std_logic) return  core_state_t; 
+        LR              : std_logic) return  core_state_t; 
   
 end  helper_funcs;
 
@@ -311,7 +311,7 @@ package body helper_funcs is
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean;
         imm8            : std_logic_vector (7 downto 0);
-        LM              : std_logic) return core_state_t is
+        LR              : std_logic) return core_state_t is
         variable next_state : core_state_t;
       begin
             -- If you modify something here then remember to copy it to s_FINISH_STM
@@ -361,8 +361,8 @@ package body helper_funcs is
                             next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
                         elsif (imm8(7) = '1') then   
                             next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                        elsif (LM = '1') then   
-                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_LM;     
+                        elsif (LR = '1') then   
+                            next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
                         else
                             next_state := s_FINISH_STM;
                         end if;    
@@ -371,7 +371,6 @@ package body helper_funcs is
                     end if; 
                 else 
                     -- access_mem_mode = MEM_ACCESS_NONE
-                
                 end if;      
                 -- CHECK if instruction updates PC
             elsif (PC_updated = true) then

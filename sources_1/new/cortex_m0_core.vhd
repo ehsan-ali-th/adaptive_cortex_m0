@@ -40,7 +40,6 @@ entity cortex_m0_core is
     Port ( 
             HCLK : in std_logic;                        -- Clock
          HRESETn : in std_logic;                        -- Asynchronous reset
-  
 
             -- AMBA 3 AHB-LITE INTERFACE INPUTS
           HRDATA : in std_logic_vector (31 downto 0);   -- AHB read-data
@@ -103,7 +102,7 @@ architecture Behavioral of cortex_m0_core is
         gp_addrB: out STD_LOGIC_VECTOR (3 downto 0);
         gp_addrC : out std_logic_vector (3 downto 0);
         imm8: out STD_LOGIC_VECTOR (7 downto 0);
-        LM : out std_logic;
+        LR : out std_logic;
         execution_cmd: out executor_cmds_t;
         access_mem: out boolean;
         use_base_register : out boolean;
@@ -144,7 +143,7 @@ architecture Behavioral of cortex_m0_core is
             access_mem : in boolean;
             PC_updated : in boolean;
             imm8 : in std_logic_vector (7 downto 0);
-            LM : in std_logic;
+            LR : in std_logic;
             number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
             execution_cmd : in executor_cmds_t;
             LDM_STM_access_mem : in boolean;
@@ -157,7 +156,7 @@ architecture Behavioral of cortex_m0_core is
             PC_decode : out std_logic_vector (31 downto 0);
             PC_execute :  out std_logic_vector (31 downto 0);
             PC_after_execute :  out std_logic_vector (31 downto 0);
-            LDM_STM_mem_address_index :  out unsigned (4 downto 0); 
+            LDM_STM_mem_address_index :  out unsigned (4 downto 0);          
             gp_data_in_ctrl : out gp_data_in_ctrl_t;
             hrdata_ctrl : out hrdata_ctrl_t;
             disable_fetch : out boolean;
@@ -232,6 +231,7 @@ architecture Behavioral of cortex_m0_core is
 	signal ldm_hrdata_value : std_logic_vector (31 downto 0);
 	signal LDM_STM_mem_address_index : unsigned (4 downto 0);
 	signal LDM_STM_mem_addr : unsigned (31 downto 0);
+	signal PUSH_mem_addr: unsigned (31 downto 0);
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
     signal internal_reset: std_logic := '1';
@@ -259,7 +259,7 @@ architecture Behavioral of cortex_m0_core is
    
     -- decoder signals
     signal imm8 : std_logic_vector (7 downto 0);
-    signal LM : std_logic;	
+    signal LR : std_logic;	
 	signal WE : std_logic;	
 	signal use_PC : boolean;
     signal access_mem : boolean;
@@ -371,7 +371,7 @@ begin
                        gp_addrB => gp_addrB_value,
                        gp_addrC => gp_addrC_value,
                            imm8 => imm8,
-                             LM => LM,
+                             LR => LR,
                   execution_cmd => command_value,
                      access_mem => access_mem_value,
               use_base_register => use_base_register,
@@ -408,7 +408,7 @@ begin
                      access_mem => access_mem_value,
                      PC_updated => PC_updated,
                            imm8 => imm8_z_ext_value(7 downto 0),
-                             LM => LM,
+                             LR => LR,
          number_of_ones_initial => number_of_ones_initial,
                   execution_cmd => command_value,
              LDM_STM_access_mem => LDM_STM_access_mem_value,
@@ -496,7 +496,7 @@ begin
   
     
     HADDR_p : process ( LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, 
-                        PC(31 downto 2), LDM_STM_mem_addr, VT_addr, SP_main) begin
+                        PC(31 downto 2), LDM_STM_mem_addr, VT_addr, PUSH_mem_addr) begin
         case (haddr_ctrl) is
             when              sel_PC =>  HADDR <= PC(31 downto 2) & B"00";  
             when            sel_DATA =>  HADDR <= data_memory_addr;
@@ -504,11 +504,12 @@ begin
             when             sel_STM =>  HADDR <= std_logic_vector (LDM_STM_mem_addr);
             when           sel_WDATA =>  HADDR <= std_logic_vector (data_memory_addr_i);
             when    sel_VECTOR_TABLE =>  HADDR <= VT_addr;
-            when    sel_SP_main_addr =>  HADDR <= SP_main;
+            when    sel_SP_main_addr =>  HADDR <= std_logic_vector (PUSH_mem_addr);
         end case;
     end process;   
    
     LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
+    PUSH_mem_addr <=  unsigned (SP_main and x"FFFF_FFFE");
     
     internal_reset_p: process (HCLK) begin
         if (rising_edge(HCLK)) then
@@ -581,7 +582,7 @@ begin
     end process;
     
     gp_addrB_final_p: process (haddr_ctrl, use_base_register, gp_addrB_value, gp_addrB, LDM_W_STM_R_reg) begin
-        if (haddr_ctrl = sel_STM) then
+        if (haddr_ctrl = sel_STM or haddr_ctrl = sel_SP_main_addr) then
             gp_addrB_final <= LDM_W_STM_R_reg;   
         else
             if (use_base_register = true) then 
@@ -699,6 +700,7 @@ begin
             when STRB_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when STR_SP_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when STM         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when PUSH        => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process; 
@@ -889,11 +891,13 @@ begin
         variable     Rm_decode : string(1 to 2);   -- Rd register specification
         variable     Rn_decode : string(1 to 2);   -- Rn register specification
         variable     imm8_decode : string(1 to 3);   -- immediate 8 specification
+        variable     LR_decode : string(1 to 2);
     begin  
-        Rd_decode(1) := 'r';
-        Rm_decode(1) := 'r';
-        Rn_decode(1) := 'r';
-        imm8_decode(1) :=  '#';
+        Rd_decode (1) := 'r';
+        Rm_decode (1) := 'r';
+        Rn_decode (1) := 'r';
+        imm8_decode (1) :=  '#';
+        LR_decode (1) := '#';
         
         if internal_reset = '1' then
             cortex_m0_opcode <= "CORE IS RESET!   ";
@@ -1183,7 +1187,13 @@ begin
                 Rn_decode(2) := hexcharacter ('0' & current_instruction (10 downto 8)); -- Rn 
                 imm8_decode(2) :=  hexcharacter (current_instruction (7 downto 4));
                 imm8_decode(3) :=  hexcharacter (current_instruction (3 downto 0));  
-                cortex_m0_opcode <= "STM " & Rn_decode & "!,{" & imm8_decode & "}"  & "    ";                                   
+                cortex_m0_opcode <= "STM " & Rn_decode & "!,{" & imm8_decode & "}"  & "    "; 
+           ------------------------------------------------------------------------------------- -- PUSH <registers>
+           elsif std_match(current_instruction(15 downto 9), "1011010") then    
+                LR_decode (2) := hexcharacter ("000" & current_instruction (8));            
+                imm8_decode (2) :=  hexcharacter (current_instruction (7 downto 4));
+                imm8_decode (3) :=  hexcharacter (current_instruction (3 downto 0));  
+                cortex_m0_opcode <= "PUSH " & "LR=" & LR_decode & ",{" & imm8_decode & "}"  & " ";                                                
               
            end if;
         end if;

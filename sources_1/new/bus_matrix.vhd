@@ -35,7 +35,6 @@ entity bus_matrix is
     Port ( 
         clk : in std_logic;
         reset : in std_logic;
-
         cortex_m0_HADDR : in std_logic_vector (31 downto 0); 
         cortex_m0_HWDATA : in std_logic_vector (31 downto 0);
         -- HWRITE:
@@ -63,29 +62,34 @@ end bus_matrix;
 
 architecture Behavioral of bus_matrix is
 
+    signal HSEL_code_bram_value : std_logic;
+    signal HSEL_data_bram_value : std_logic;
     signal HSEL_code_bram : std_logic;
     signal HSEL_data_bram : std_logic;
-    
 
 begin
-    
---     a_p: process (clk) begin
---        if (rising_edge(clk)) then
---            if (reset = '0') then
-                
---            else
---            end if;    
---        end if;
---    end process;
 
+    -- We need to delay select signals by one clock cycle for memory reads
+    HSEL_p: process (clk) begin
+        if (reset = '1') then
+            HSEL_code_bram <= '1';      -- Initially start reading from code memory
+            HSEL_data_bram <= '0';
+        else
+            if (rising_edge(clk)) then
+                HSEL_code_bram <= HSEL_code_bram_value;
+                HSEL_data_bram <= HSEL_data_bram_value;    
+            end if;                       
+        end if;
+    end process;
+    
     address_decoder_p: process (cortex_m0_HADDR) 
         variable mem_address_int : integer;
     begin
         mem_address_int := to_integer(unsigned(cortex_m0_HADDR));
         case (mem_address_int) is
-            when 0          to     32767      => HSEL_code_bram <= '1'; HSEL_data_bram <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0000_8000 
-            when 536870912  to     536903680  => HSEL_code_bram <= '0'; HSEL_data_bram <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x0000_8000
-            when others                       => HSEL_code_bram <= '0'; HSEL_data_bram <= '0';      -- Select None  
+            when 0          to     32767      => HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0000_8000 
+            when 536870912  to     536903680  => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x0000_8000
+            when others                       => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None  
         end case;
     end process;
     
@@ -100,10 +104,10 @@ begin
         end case;
    end process;
     
-    en_p: process (HSEL_code_bram, HSEL_data_bram) 
+    en_p: process (HSEL_code_bram_value, HSEL_data_bram_value) 
         variable mux_sel : std_logic_vector (1 downto 0);
     begin
-        mux_sel := HSEL_code_bram & HSEL_data_bram;
+        mux_sel := HSEL_code_bram_value & HSEL_data_bram_value;
         case (mux_sel) is
             when "10"   => code_bram_ENA <= '1'; data_bram_ENA <= '0';      -- Enable Code Block RAM
             when "01"   => code_bram_ENA <= '0'; data_bram_ENA <= '1';      -- Enable Data Block RAM
@@ -111,10 +115,10 @@ begin
         end case;
    end process;
    
-    we_p: process (cortex_m0_HWRITE, HSEL_code_bram, HSEL_data_bram, cortex_m0_HSIZE) 
+    we_p: process (cortex_m0_HWRITE, HSEL_code_bram_value, HSEL_data_bram_value, cortex_m0_HSIZE) 
         variable mux_sel : std_logic_vector (1 downto 0);
     begin
-        mux_sel := HSEL_code_bram & HSEL_data_bram;
+        mux_sel := HSEL_code_bram_value & HSEL_data_bram_value;
         if (cortex_m0_HWRITE = '1') then        
             case (mux_sel) is
                 when "10"   => 
@@ -138,10 +142,10 @@ begin
         end if;    
     end process;   
     
-    DINA_p: process (cortex_m0_HWDATA, HSEL_code_bram, HSEL_data_bram) 
+    DINA_p: process (cortex_m0_HWDATA, HSEL_code_bram_value, HSEL_data_bram_value) 
         variable mux_sel : std_logic_vector (1 downto 0);
     begin
-        mux_sel := HSEL_code_bram & HSEL_data_bram;
+        mux_sel := HSEL_code_bram_value & HSEL_data_bram_value;
         case (mux_sel) is
             when "10"   => code_bram_DINA <= cortex_m0_HWDATA;
             when "01"   => data_bram_DINA <= cortex_m0_HWDATA;
