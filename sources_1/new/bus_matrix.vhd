@@ -61,7 +61,7 @@ entity bus_matrix is
 end bus_matrix;
 
 architecture Behavioral of bus_matrix is
-
+    signal internal_reset : std_logic;
     signal HSEL_code_bram_value : std_logic;
     signal HSEL_data_bram_value : std_logic;
     signal HSEL_code_bram : std_logic;
@@ -69,9 +69,11 @@ architecture Behavioral of bus_matrix is
 
 begin
 
+    internal_reset <= not reset;
+
     -- We need to delay select signals by one clock cycle for memory reads
     HSEL_p: process (clk) begin
-        if (reset = '1') then
+        if (internal_reset = '1') then
             HSEL_code_bram <= '1';      -- Initially start reading from code memory
             HSEL_data_bram <= '0';
         else

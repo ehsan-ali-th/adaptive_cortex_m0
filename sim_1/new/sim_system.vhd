@@ -80,10 +80,14 @@ begin
     );
     
     process begin
-        wait for 6000 ns;
+        wait for 12000 ns;
         report "Simulation finished"  severity note;
         std.env.finish;
     end process;
+    
+--     if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+--                    report "PUSH R5: sel_LDM_Rn " & integer'image (to_integer(PUSH_write_counter)) & 
+--                        " PC_execute(1)= " &  std_logic'image(PC_execute(1)) severity note;
 
 
 end Behavioral;

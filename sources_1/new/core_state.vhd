@@ -42,7 +42,8 @@ entity core_state is
         access_mem : in boolean;
         PC_updated : in boolean;
         imm8 : in std_logic_vector (7 downto 0);
-        LR : in std_logic;
+        imm8_value : in std_logic_vector (7 downto 0);
+        LR_PC : in std_logic;
         number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
         execution_cmd : in executor_cmds_t;
         LDM_STM_access_mem : in boolean;
@@ -50,6 +51,7 @@ entity core_state is
         access_mem_mode : in access_mem_mode_t;
         SP_main_init : in std_logic_vector (31 downto 0);
         PC_init : in std_logic_vector (31 downto 0);
+        pos_A_is_multi_cycle : in boolean;
         PC : out std_logic_vector (31 downto 0);
         SP_main : out std_logic_vector (31 downto 0);
         PC_decode : out std_logic_vector (31 downto 0);
@@ -86,11 +88,11 @@ architecture Behavioral of core_state is
     signal STM_PUSH_counter_diff : unsigned (4 downto 0);
     signal LDM_cur_target_reg : low_register_t;
     signal any_access_mem : boolean;
-    signal PUSH_number_of_ones_initial : unsigned (4 downto 0);
+    signal PUSH_POP_number_of_ones_initial : unsigned (3 downto 0);
 begin
 
     any_access_mem <= access_mem or LDM_STM_access_mem;
-    PUSH_number_of_ones_initial <= unsigned ("0" & number_of_ones_initial) + LR;
+    PUSH_POP_number_of_ones_initial <= unsigned (number_of_ones_initial) + LR_PC;
 
     LDM_STM_mem_address_index_p: process (LDM_read_counter, STM_write_counter, execution_cmd) begin
         if (execution_cmd = LDM) then
@@ -104,12 +106,12 @@ begin
     
     -- STM_write_counter is an up counter starts from -1 , we use this signal to mark the two cycle before the end 
     --  of STM instruction so we can fetch and decode the next instruction in right time.
-    STM_PUSH_counter_diff_p: process (execution_cmd, number_of_ones_initial, PUSH_number_of_ones_initial, 
+    STM_PUSH_counter_diff_p: process (execution_cmd, number_of_ones_initial, PUSH_POP_number_of_ones_initial, 
                                       STM_write_counter, PUSH_write_counter) begin
         if (execution_cmd = STM) then                  
             STM_PUSH_counter_diff <= unsigned("0" & number_of_ones_initial) - STM_write_counter;
         elsif (execution_cmd = PUSH) then
-                STM_PUSH_counter_diff <= unsigned(PUSH_number_of_ones_initial) - PUSH_write_counter;
+                STM_PUSH_counter_diff <= unsigned("0" & PUSH_POP_number_of_ones_initial) - PUSH_write_counter;
         else
             STM_PUSH_counter_diff <= B"00000";
         end if;    
@@ -154,7 +156,7 @@ begin
             SP_main_value <= x"0000_0000";
         else  
             if (m0_core_state = s_SET_SP) then 
-                    SP_main_value <= SP_main_init;
+                SP_main_value <= SP_main_init;
             elsif ( m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R0 or 
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R1 or
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R2 or
@@ -163,8 +165,18 @@ begin
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 or
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 or 
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 or
-                    m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_LR) then
-                    SP_main_value <= std_logic_vector (unsigned(SP_main) - 4);
+                    m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_LR ) then
+                SP_main_value <= std_logic_vector (unsigned(SP_main) - 4);
+           elsif (  m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R0 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R1 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R2 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R3 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R4 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R5 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R6 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R7 or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
+                SP_main_value <= std_logic_vector (unsigned(SP_main) + 4);                
             end if;      
         end if; 
     end process;
@@ -237,11 +249,13 @@ begin
         end if;
     end process;
     
-    LDM_counter_value_p: process (m0_core_state, number_of_ones_initial, LDM_counter) begin
+    LDM_counter_value_p: process (m0_core_state, number_of_ones_initial, PUSH_POP_number_of_ones_initial, LDM_counter) begin
         if (m0_core_state = s_RUN) then
             LDM_counter_value <= "0000";
         elsif (m0_core_state = s_DATA_MEM_ACCESS_LDM) then  
             LDM_counter_value <= unsigned(number_of_ones_initial);
+        elsif (m0_core_state = s_DATA_MEM_ACCESS_POP) then  
+            LDM_counter_value <= unsigned(PUSH_POP_number_of_ones_initial);
         else    
             LDM_counter_value <= unsigned(LDM_counter) - 1;  
         end if;    
@@ -263,7 +277,7 @@ begin
     end process;
      
     next_state_p: process ( m0_core_state, reset, any_access_mem, PC_updated, execution_cmd, 
-                            LDM_counter, access_mem_mode, imm8) begin
+                            LDM_counter, LDM_counter_value, access_mem_mode, imm8, imm8_value, LR_PC) begin
         if (reset = '1') then
              m0_core_next_state <= s_RESET;
         else     
@@ -274,352 +288,515 @@ begin
                 when s_SET_PC               => m0_core_next_state <= s_PRE1_RUN;
                 when s_PRE1_RUN             => m0_core_next_state <= s_PRE2_RUN;
                 when s_PRE2_RUN             => m0_core_next_state <= s_RUN;
-                when s_RUN                  => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                when s_RUN                  => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                 when s_DATA_MEM_ACCESS_R    => m0_core_next_state <= s_EXECUTE_DATA_MEM_R; 
-                when s_EXECUTE_DATA_MEM_R   => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                when s_EXECUTE_DATA_MEM_R   => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                 when s_DATA_MEM_ACCESS_W    => m0_core_next_state <= s_EXECUTE_DATA_MEM_W; 
-                when s_EXECUTE_DATA_MEM_W   => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                when s_EXECUTE_DATA_MEM_W   => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                 when s_PC_UPDATED           => m0_core_next_state <= s_PIPELINE_FLUSH1;
                 when s_PIPELINE_FLUSH1      => m0_core_next_state <= s_PIPELINE_FLUSH2;
                 when s_PIPELINE_FLUSH2      => m0_core_next_state <= s_PIPELINE_FLUSH3;
-                when s_PIPELINE_FLUSH3      => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                when s_PIPELINE_FLUSH3      => m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                 when s_DATA_MEM_ACCESS_LDM  =>
-                    if    (imm8(0) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
-                    elsif (imm8(1) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
-                    elsif (imm8(2) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
-                    elsif (imm8(3) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
-                    elsif (imm8(4) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
-                    elsif (imm8(5) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                    if    (imm8(7) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
                     elsif (imm8(6) = '1') then   
                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                    elsif (imm8(7) = '1') then   
-                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                    elsif (imm8(5) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                    elsif (imm8(4) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                    elsif (imm8(3) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                    elsif (imm8(2) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                    elsif (imm8(1) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                    elsif (imm8(0) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
                     else
                         m0_core_next_state <= s_RUN;  
                     end if;  
-                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
                     -- if we reach this state we are sure that LDM_counter is greater than 1
                     if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                    else
-                        if (imm8(1) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
-                        elsif (imm8(2) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
-                        elsif (imm8(3) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
-                        elsif (imm8(4) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
-                        elsif (imm8(5) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
-                        elsif (imm8(6) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                        elsif (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
-                        else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                        end if;  
-                    end if;                       
-               when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
-                    -- if we reach this state we are sure that LDM_counter is greater than 1
-                    if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                    else
-                        if (imm8(2) = '1') then   
-                            m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
-                        elsif (imm8(3) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
-                        elsif (imm8(4) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
-                        elsif (imm8(5) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
-                        elsif (imm8(6) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                        elsif (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
-                        else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                        end if;  
-                    end if;    
-               when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
-                    -- if we reach this state we are sure that LDM_counter is greater than 1
-                    if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                    else
-                        if (imm8(3) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
-                        elsif (imm8(4) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
-                        elsif (imm8(5) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
-                        elsif (imm8(6) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                        elsif (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
-                        else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);   
-                        end if;  
-                    end if;    
-                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>  
-                    -- if we reach this state we are sure that LDM_counter is greater than 1
-                    if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                    else
-                        if (imm8(4) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
-                        elsif (imm8(5) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
-                        elsif (imm8(6) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                        elsif (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
-                        else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);    
-                        end if;  
-                    end if;   
-                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
-                -- if we reach this state we are sure that LDM_counter is greater than 1
-                    if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                    else
-                        if (imm8(5) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
-                        elsif (imm8(6) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                        elsif (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
-                        else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR); 
-                        end if;  
-                    end if;
-                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
-                    -- if we reach this state we are sure that LDM_counter is greater than 1
-                    if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                     else
                         if (imm8(6) = '1') then   
                              m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R6;
-                        elsif (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        elsif (imm8(5) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(2) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
                         else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);   
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                         end if;  
-                    end if; 
-                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
+                    end if;                       
+               when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
                     -- if we reach this state we are sure that LDM_counter is greater than 1
                     if (LDM_counter = 0) then
-                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                     else
-                        if (imm8(7) = '1') then   
-                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R7;
+                        if (imm8(5) = '1') then   
+                            m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R5;
+                        elsif (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(2) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
                         else
-                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);       
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                        end if;  
+                    end if;    
+               when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    else
+                        if (imm8(4) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R4;
+                        elsif (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(2) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
+                        else
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);   
+                        end if;  
+                    end if;    
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    else
+                        if (imm8(3) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R3;
+                        elsif (imm8(2) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
+                        else
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);    
+                        end if;  
+                    end if;   
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    else
+                        if (imm8(2) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R2;
+                        elsif (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
+                        else
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC); 
+                        end if;  
+                    end if;
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    else
+                        if (imm8(1) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R1;
+                        elsif (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
+                        else
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);   
                         end if;  
                     end if; 
-                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
-                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
+                    -- if we reach this state we are sure that LDM_counter is greater than 1
+                    if (LDM_counter = 0) then
+                        m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    else
+                        if (imm8(0) = '1') then   
+                             m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_LDM_R0;
+                        else
+                             m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);       
+                        end if;  
+                    end if; 
+                when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                 when s_FINISH_STM =>
-                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R0 =>  
-                    if (imm8(1) = '1') then   
+                    if (imm8_value(1) = '1') then   
                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R1;
-                    elsif (imm8(2) = '1') then   
+                    elsif (imm8_value(2) = '1') then   
                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R2;
-                    elsif (imm8(3) = '1') then   
+                    elsif (imm8_value(3) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R3;
-                    elsif (imm8(4) = '1') then   
+                    elsif (imm8_value(4) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R4;
-                    elsif (imm8(5) = '1') then   
+                    elsif (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
-                    elsif (imm8(6) = '1') then   
+                    elsif (imm8_value(6) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
+                    elsif (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R1 =>  
-                    if (imm8(2) = '1') then   
+                    if (imm8_value(2) = '1') then   
                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R2;
-                    elsif (imm8(3) = '1') then   
+                    elsif (imm8_value(3) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R3;
-                    elsif (imm8(4) = '1') then   
+                    elsif (imm8_value(4) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R4;
-                    elsif (imm8(5) = '1') then   
+                    elsif (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
-                    elsif (imm8(6) = '1') then   
+                    elsif (imm8_value(6) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
+                    elsif (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;
                     end if;  
-           when s_DATA_REG_ACCESS_EXECUTE_STM_R2 =>  
-                    if (imm8(3) = '1') then   
+                when s_DATA_REG_ACCESS_EXECUTE_STM_R2 =>  
+                    if (imm8_value(3) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R3;
-                    elsif (imm8(4) = '1') then   
+                    elsif (imm8_value(4) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R4;
-                    elsif (imm8(5) = '1') then   
+                    elsif (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
-                    elsif (imm8(6) = '1') then   
+                    elsif (imm8_value(6) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
+                    elsif (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;    
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R3 =>  
-                    if (imm8(4) = '1') then   
+                    if (imm8_value(4) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R4;
-                    elsif (imm8(5) = '1') then   
+                    elsif (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
-                    elsif (imm8(6) = '1') then   
+                    elsif (imm8_value(6) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
+                    elsif (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R4 =>  
-                    if (imm8(5) = '1') then   
+                    if (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R5;
-                    elsif (imm8(6) = '1') then   
+                    elsif (imm8_value(6) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
+                    elsif (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;    
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R5 =>  
-                    if (imm8(6) = '1') then   
+                    if (imm8_value(6) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R6;
-                    elsif (imm8(7) = '1') then   
+                    elsif (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;     
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R6 =>  
-                    if (imm8(7) = '1') then   
+                    if (imm8_value(7) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_STM_R7;
                     else
                          m0_core_next_state <= s_FINISH_STM;
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_STM_R7 =>  
-                m0_core_next_state <= s_FINISH_STM;
+                    m0_core_next_state <= s_FINISH_STM;
                 when s_FINISH_PUSH =>
-                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8, LR);
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R0 =>  
-                    if (imm8(1) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
-                    elsif (imm8(2) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
-                    elsif (imm8(3) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
-                    elsif (imm8(4) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
-                    elsif (imm8(5) = '1') then   
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                when s_DATA_REG_ACCESS_EXECUTE_PUSH_LR =>  
+                    if (imm8_value(7) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
+                    elsif (imm8_value(6) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
+                    elsif (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
-                    elsif (imm8(6) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
-                    elsif (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
+                    elsif (imm8_value(4) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
+                    elsif (imm8_value(3) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
+                    elsif (imm8_value(2) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                    elsif (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;     
                     else
                          m0_core_next_state <= s_FINISH_PUSH;
                     end if;  
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R1 =>  
-                    if (imm8(2) = '1') then   
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
-                    elsif (imm8(3) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
-                    elsif (imm8(4) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
-                    elsif (imm8(5) = '1') then   
+                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 =>  
+                    if (imm8_value(6) = '1') then   
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
+                    elsif (imm8_value(5) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
-                    elsif (imm8(6) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
-                    elsif (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
+                    elsif (imm8_value(4) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
+                    elsif (imm8_value(3) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
+                    elsif (imm8_value(2) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                    elsif (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;     
                     else
                          m0_core_next_state <= s_FINISH_PUSH;
                     end if;  
-           when s_DATA_REG_ACCESS_EXECUTE_PUSH_R2 =>  
-                    if (imm8(3) = '1') then   
+                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 =>  
+                    if (imm8_value(5) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
+                    elsif (imm8_value(4) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
+                    elsif (imm8_value(3) = '1') then   
                          m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
-                    elsif (imm8(4) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
-                    elsif (imm8(5) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
-                    elsif (imm8(6) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
-                    elsif (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
-                    else
-                         m0_core_next_state <= s_FINISH_PUSH;    
-                    end if;  
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R3 =>  
-                    if (imm8(4) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
-                    elsif (imm8(5) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
-                    elsif (imm8(6) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
-                    elsif (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
-                    else
-                         m0_core_next_state <= s_FINISH_PUSH;
-                    end if;  
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R4 =>  
-                    if (imm8(5) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R5;
-                    elsif (imm8(6) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
-                    elsif (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
+                    elsif (imm8_value(2) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                    elsif (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;     
                     else
                          m0_core_next_state <= s_FINISH_PUSH;    
                     end if;  
                 when s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 =>  
-                    if (imm8(6) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R6;
-                    elsif (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;     
+                    if (imm8_value(4) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R4;
+                    elsif (imm8_value(3) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
+                    elsif (imm8_value(2) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                    elsif (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;     
+                    else
+                         m0_core_next_state <= s_FINISH_PUSH;
+                    end if;  
+                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R4 =>  
+                    if (imm8_value(3) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R3;
+                    elsif (imm8_value(2) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                    elsif (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;     
+                    else
+                         m0_core_next_state <= s_FINISH_PUSH;    
+                    end if;  
+               when s_DATA_REG_ACCESS_EXECUTE_PUSH_R3 =>  
+                    if (imm8_value(2) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R2;
+                    elsif (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;     
                     else
                          m0_core_next_state <= s_FINISH_PUSH;     
                     end if;  
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 =>  
-                    if (imm8(7) = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R7;
-                    elsif (LR = '1') then
-                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;
+               when s_DATA_REG_ACCESS_EXECUTE_PUSH_R2 =>  
+                    if (imm8_value(1) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R1;
+                    elsif (imm8_value(0) = '1') then
+                        m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;
                     else    
                          m0_core_next_state <= s_FINISH_PUSH;
                     end if;  
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 =>  
-                     if (LR = '1') then   
-                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_LR;
+               when s_DATA_REG_ACCESS_EXECUTE_PUSH_R1 =>  
+                     if (imm8_value(0) = '1') then   
+                         m0_core_next_state <= s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;
                     else
                          m0_core_next_state <= s_FINISH_PUSH;
                     end if; 
-                when s_DATA_REG_ACCESS_EXECUTE_PUSH_LR =>    
-                     m0_core_next_state <= s_FINISH_PUSH;
+               when s_DATA_REG_ACCESS_EXECUTE_PUSH_R0 =>    
+                    m0_core_next_state <= s_FINISH_PUSH;
+               when s_DATA_MEM_ACCESS_POP  =>
+                    if    (imm8_value(0) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R0;
+                    elsif (imm8_value(1) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R1;
+                    elsif (imm8_value(2) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R2;
+                    elsif (imm8_value(3) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R3;
+                    elsif (imm8_value(4) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R4;
+                    elsif (imm8_value(5) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R5;
+                    elsif (imm8_value(6) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R6;
+                    elsif (imm8_value(7) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;
+                    else
+                        m0_core_next_state <= s_RUN;  
+                    end if;  
+             when s_DATA_MEM_ACCESS_EXECUTE_POP_R0 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(1) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R1;
+                    elsif (imm8(2) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R2;
+                    elsif (imm8(3) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R3;
+                    elsif (imm8(4) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R4;
+                    elsif (imm8(5) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R5;
+                    elsif (imm8(6) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R6;
+                    elsif (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    end if;  
+                end if;                       
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R1 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(2) = '1') then   
+                        m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R2;
+                    elsif (imm8(3) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R3;
+                    elsif (imm8(4) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R4;
+                    elsif (imm8(5) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R5;
+                    elsif (imm8(6) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R6;
+                    elsif (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                    end if;  
+                end if;    
+           when s_DATA_MEM_ACCESS_EXECUTE_POP_R2 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(3) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R3;
+                    elsif (imm8(4) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R4;
+                    elsif (imm8(5) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R5;
+                    elsif (imm8(6) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R6;
+                    elsif (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);   
+                    end if;  
+                end if;    
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R3 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(4) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R4;
+                    elsif (imm8(5) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R5;
+                    elsif (imm8(6) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R6;
+                    elsif (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;     
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);    
+                    end if;  
+                end if;   
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R4 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(5) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R5;
+                    elsif (imm8(6) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R4;
+                    elsif (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R3;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;      
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC); 
+                    end if;  
+                end if;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R5 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(6) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R6;
+                    elsif (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;     
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);   
+                    end if;  
+                end if; 
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R6 =>  
+                -- if we reach this state we are sure that LDM_counter is greater than 1
+                if (LDM_counter = 0) then
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+                else
+                    if (imm8(7) = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_R7;
+                    elsif (LR_PC = '1') then   
+                         m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC; 
+                    else
+                         m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);       
+                    end if;  
+                end if; 
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R7 =>  
+               if (LR_PC = '1') then   
+                    m0_core_next_state <= s_DATA_MEM_ACCESS_EXECUTE_POP_PC;
+               else     
+                    m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
+               end if;
+            when  s_DATA_MEM_ACCESS_EXECUTE_POP_PC =>
+                m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);     
 
                                                                                                                                        
                when others => m0_core_next_state <= s_RESET;
@@ -628,7 +805,7 @@ begin
     end process;
 
     output_p: process ( m0_core_state, access_mem, PC(1), PC_execute(1), LDM_counter, LDM_counter_value, STM_PUSH_counter_diff,
-                        STM_write_counter, imm8, any_access_mem) begin
+                        STM_write_counter, PUSH_write_counter, any_access_mem) begin
         case (m0_core_state) is
             when s_RESET => 
                 refetch_i <= false; 
@@ -717,10 +894,16 @@ begin
              when s_DATA_MEM_ACCESS_R =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
-                if (PC_execute(1) = '1') then
-                    hrdata_ctrl <= sel_NC;          -- Do not update hrdata_program_value
+                if (PC(1) = '0') then
+                    -- LDR is located in position A: 
+                    hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
                 else
-                    hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value
+                    -- LDR is located in position B:
+                    if (pos_A_is_multi_cycle = true) then 
+                        hrdata_ctrl <= sel_NC;          -- Do not update hrdata_program_value
+                    else
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                    end if;    
                 end if;
                 disable_executor <= true; 
                 if (PC(1) = '1') then
@@ -825,18 +1008,29 @@ begin
             when s_DATA_MEM_ACCESS_LDM =>
                 LDM_STM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
-                    -- it means the STM instruction has only 1 register in its register_list
-                    -- therefor we have to finish the STM in next cycle.
+                    -- it means the LDM instruction has only 1 register in its register_list
+                    -- therefor we have to finish the LDM in next cycle.
                     refetch_i <= false;
-                    disable_fetch <= any_access_mem; 
+                     if (PC_execute(1) = '1') then
+                        disable_fetch <= false; 
+                    else
+                        disable_fetch <= any_access_mem; 
+                    end if;
+                   
                 else
                     refetch_i <= true;
                     disable_fetch <= true;
                 end if;
-                if (PC(1) = '1') then
-                        hrdata_ctrl <= sel_NC;          -- Do not update hrdata_program_value
+                if (PC(1) = '0') then
+                    -- LDR is located in position A: 
+                    hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
                 else
-                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value
+                    -- LDR is located in position B:
+                    if (pos_A_is_multi_cycle = true) then 
+                        hrdata_ctrl <= sel_NC;          -- Do not update hrdata_program_value
+                    else
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                    end if;    
                 end if;
                 gp_data_in_ctrl <= sel_LDM_Rn; 
                 haddr_ctrl <= sel_LDM;
@@ -1088,9 +1282,19 @@ begin
                end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
@@ -1115,13 +1319,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;   
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1142,9 +1356,19 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                 if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
@@ -1169,13 +1393,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                 if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;  
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
@@ -1196,13 +1430,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;   
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
@@ -1223,13 +1467,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                 if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;   
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1250,13 +1504,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+               if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;  
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1277,13 +1541,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_STM;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
-                if (STM_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (STM_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if; 
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
@@ -1323,13 +1597,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter = B"00000" and PC_execute(1) = '0') then
-                    -- let the first memory write acces of PUSH to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                if (PUSH_write_counter =  B"00000") then
+                    -- let the first memory write acces of STM to update hrdata_progrm_value
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1350,13 +1634,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;   
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1377,13 +1671,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+                 if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;   
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1404,13 +1708,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;   
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
@@ -1431,9 +1745,19 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+                 if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
@@ -1458,13 +1782,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+                if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if; 
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1485,13 +1819,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+               if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;  
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
@@ -1512,13 +1856,23 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter = B"00000" and PC_execute(1) = '0') then
+                if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if; 
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
@@ -1539,17 +1893,279 @@ begin
                 end if;
                 haddr_ctrl <= sel_SP_main_addr;
                 gp_data_in_ctrl <= sel_SP_set;  
-                if (PUSH_write_counter =  B"00000" and PC_execute(1) = '0') then
+               if (PUSH_write_counter =  B"00000") then
                     -- let the first memory write acces of STM to update hrdata_progrm_value
-                    hrdata_ctrl <= sel_LDM_Rn;
+                    if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                    else
+                        -- STM is located in position B:
+                        if (pos_A_is_multi_cycle = true) then 
+                            hrdata_ctrl <= sel_LDM_DATA;          -- Do not update hrdata_program_value 
+                        else
+                            hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                        end if;    
+                    end if;
                 else
                     -- do not update hrdata_progrm_value
                     hrdata_ctrl <= sel_LDM_DATA;
-                end if;    
+                end if;  
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+             when s_DATA_MEM_ACCESS_POP =>
+                LDM_STM_capture_base <= true; 
+                if (LDM_counter_value = 1) then
+                    -- it means the POP instruction has only 1 register in its register_list
+                    -- therefor we have to finish the STM in next cycle.
+                    refetch_i <= false;
+                    if (PC_execute(1) = '1') then
+                        disable_fetch <= false; 
+                    else
+                        disable_fetch <= any_access_mem; 
+                    end if;
+                else
+                    refetch_i <= true;
+                    disable_fetch <= true;
+                end if;
+                if (PC(1) = '0') then
+                        -- STM is located in position A: 
+                    hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value   
+                else
+                    -- STM is located in position B:
+                    if (pos_A_is_multi_cycle = true) then 
+                        hrdata_ctrl <= sel_NC;          -- Do not update hrdata_program_value 
+                    else
+                        hrdata_ctrl <= sel_LDM_Rn;      -- Update hrdata_program_value       
+                    end if;    
+                end if;
+                gp_data_in_ctrl <= sel_LDM_Rn; 
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false; 
+                LDM_cur_target_reg <= REG_NONE;
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;    
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R0 =>  
+                LDM_cur_target_reg <= REG_R0;   
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R1 =>  
+                LDM_cur_target_reg <= REG_R1;   
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                   else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R2 =>  
+                LDM_cur_target_reg <= REG_R2;   
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                 elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <=  sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R3 =>            
+                LDM_cur_target_reg <= REG_R3;  
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R4 =>  
+                LDM_cur_target_reg <= REG_R4;   
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if;  
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R5 =>  
+                LDM_cur_target_reg <= REG_R5;   
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                 end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R6 =>  
+                LDM_cur_target_reg <= REG_R6;   
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_DATA_MEM_ACCESS_EXECUTE_POP_R7 =>  
+                LDM_cur_target_reg <= REG_R7;  
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                end if;
+                haddr_ctrl <= sel_SP_main_addr_plus_4;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+             when s_DATA_MEM_ACCESS_EXECUTE_POP_PC =>  
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                if (LDM_counter = 1) then         -- one state before the end of POP is over
+                    refetch_i <= any_access_mem; 
+                    disable_fetch <= any_access_mem; 
+                    haddr_ctrl <= sel_LDM;
+                elsif (LDM_counter = 2) then
+                    refetch_i <= false;    
+                    if (PC(1) = '1') then
+                        disable_fetch <= false;
+                    else
+                        disable_fetch <= any_access_mem;
+                    end if; 
+                    haddr_ctrl <= sel_LDM;
+                else
+                    refetch_i <= true; 
+                    disable_fetch <= true; 
+                    haddr_ctrl <= sel_LDM;
+                end if;
+                gp_data_in_ctrl <= sel_LDM_DATA;  
+                hrdata_ctrl <= sel_LDM_DATA;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;                       
+                        
 
 
             when others => 

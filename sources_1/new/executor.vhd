@@ -467,8 +467,11 @@ begin
             -------------------------------------------------------------------------------------- --  STM <Rn>!,<registers>            
             when STR_imm5 | STRH_imm5 | STRB_imm5 | STR | STRH | STRB | STR_SP_imm8 | STM =>
                  alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used   
-                 
-            when PUSH =>
+            
+            -------------------------------------------------------------------------------------- --  PUSH <registers>
+            -------------------------------------------------------------------------------------- --  POP <registers>
+                        
+            when PUSH | POP =>
                  alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used                       
              
             -------------------------------------------------------------------------------------- -- others indefined instructions
