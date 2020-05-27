@@ -52,6 +52,7 @@ entity core_state is
         SP_main_init : in std_logic_vector (31 downto 0);
         PC_init : in std_logic_vector (31 downto 0);
         pos_A_is_multi_cycle : in boolean;
+        ldm_hrdata_value : in std_logic_vector(31 downto 0);	
         PC : out std_logic_vector (31 downto 0);
         SP_main : out std_logic_vector (31 downto 0);
         PC_decode : out std_logic_vector (31 downto 0);
@@ -127,7 +128,12 @@ begin
         else    
             if (rising_edge(clk)) then
                 SP_main <= SP_main_value;
-                if (refetch_i = false) then 
+                if (m0_core_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
+                    PC <= ldm_hrdata_value;
+                    PC_decode <= PC;
+                    PC_execute <= PC_decode;
+                    PC_after_execute <= PC_execute;
+                elsif (refetch_i = false) then 
                     if (gp_addrA_executor_ctrl = false) then
                         PC <= std_logic_vector(PC_value);           -- normal
                     else
@@ -271,7 +277,8 @@ begin
             when REG_R5 => LDM_W_STM_R_reg <= "0101";
             when REG_R6 => LDM_W_STM_R_reg <= "0110";
             when REG_R7 => LDM_W_STM_R_reg <= "0111";
-            when REG_LR => LDM_W_STM_R_reg <= "1110";       -- Link register = r14
+            when REG_LR => LDM_W_STM_R_reg <= "1110";       -- Link register    = r14
+            when REG_PC => LDM_W_STM_R_reg <= "1111";       -- PC               = r14
             when others => LDM_W_STM_R_reg <= "0000";
         end case;   
     end process;
@@ -796,7 +803,7 @@ begin
                     m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);
                end if;
             when  s_DATA_MEM_ACCESS_EXECUTE_POP_PC =>
-                m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd, PC_updated, imm8_value, LR_PC);     
+                m0_core_next_state <= s_PIPELINE_FLUSH1;     
 
                                                                                                                                        
                when others => m0_core_next_state <= s_RESET;
@@ -994,10 +1001,10 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
             when s_PIPELINE_FLUSH3 =>  
-                refetch_i <= false; 
+                refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_ALU_RESULT; 
-                disable_fetch <= false; 
+                disable_fetch <= any_access_mem; 
                 disable_executor <= true; 
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false; 
@@ -2159,9 +2166,9 @@ begin
                     disable_fetch <= true; 
                     haddr_ctrl <= sel_LDM;
                 end if;
-                gp_data_in_ctrl <= sel_LDM_DATA;  
+                gp_data_in_ctrl <= sel_gp_data_in_NC;  
                 hrdata_ctrl <= sel_LDM_DATA;  
-                disable_executor <= false; 
+                disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;                       

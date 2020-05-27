@@ -153,6 +153,7 @@ architecture Behavioral of cortex_m0_core is
             SP_main_init : in std_logic_vector (31 downto 0);
             PC_init : in std_logic_vector (31 downto 0);
             pos_A_is_multi_cycle : in boolean;
+            ldm_hrdata_value : in std_logic_vector (31 downto 0);
             PC : out std_logic_vector(31 downto 0);
             SP_main : out std_logic_vector (31 downto 0);
             PC_decode : out std_logic_vector (31 downto 0);
@@ -424,6 +425,7 @@ begin
                    SP_main_init => SP_main_init,
                         PC_init => PC_init,
            pos_A_is_multi_cycle => pos_A_is_multi_cycle,
+               ldm_hrdata_value => ldm_hrdata_value,
                              PC => PC,
                         SP_main => SP_main,
                       PC_decode => PC_decode,

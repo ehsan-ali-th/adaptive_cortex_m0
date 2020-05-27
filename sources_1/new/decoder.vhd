@@ -883,7 +883,11 @@ begin
                 gp_addrC <=  B"0000";                                   -- Will not be used '0' 
                 imm8 <= instruction (7 downto 0);                       -- imm8 = <registers>
                 execution_cmd <= POP;
-                destination_is_PC <= false;   
+                if (instruction (8) = '1') then
+                    destination_is_PC <= true;  
+                else
+                    destination_is_PC <= false; 
+                end if;     
                 access_mem <= true;    
                 use_base_register <= true;   
                 mem_load_size <= WORD;
