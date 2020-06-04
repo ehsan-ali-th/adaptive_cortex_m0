@@ -122,6 +122,7 @@ begin
                 mux_ctrl <= B"00";          -- immediate value  
                 update_PC <= '0';
                 set_flags <= true;
+                overflow_status <= (others => '0');
                 mem_access <= false;
             ------------------------------------------------------------ -- MOVS <Rd>,<Rm>    
             when MOVS =>                    
@@ -129,6 +130,7 @@ begin
                 mux_ctrl <= B"10";          -- A bus of register bank
                 update_PC <= '0';
                 set_flags <= true;
+                overflow_status <= (others => '0');
                 mem_access <= false;
             ------------------------------------------------------------ -- MOV <Rd>,<Rm> | MOV PC, Rm       
             when MOV =>                                                 
@@ -136,29 +138,39 @@ begin
                 mux_ctrl <= B"10";          -- A bus of register bank
                 -- if destination_is_PC = 1 it means d == 15 (destination is PC) then set_flags is always FALSE
                 if (destination_is_PC = true) then set_flags <= false; else set_flags <= true; end if;
+                overflow_status <= (others => '0');
                 if (destination_is_PC = true) then update_PC <= '1'; else update_PC <= '0'; end if;
                 mem_access <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,#<imm3>      
-            ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,<Rm>       
-            ------------------------------------------------------------ -- ADD <Rdn>,<Rm>    
             ------------------------------------------------------------ -- ADDS <Rdn>,#<imm8>    
-            ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,<Rm>
             ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,#<imm3>  
             ------------------------------------------------------------ -- SUBS <Rdn>,#<imm8>
-            ------------------------------------------------------------ -- SBCS <Rdn>,<Rm>    
             ------------------------------------------------------------ -- RSBS <Rd>,<Rn>,#0 
-            when ADDS_imm3 | ADDS | ADD | ADDS_imm8 | ADCS | SUBS | SUBS_imm3 | SUBS_imm8 | SBCS | RSBS  =>                                        
+            when ADDS_imm3 | ADDS_imm8 | SUBS_imm3 | SUBS_imm8 | RSBS =>                                        
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;
+            ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,<Rm>       
+            ------------------------------------------------------------ -- ADD <Rdn>,<Rm>   
+            ------------------------------------------------------------ -- ADCS <Rdn>,<Rm> 
+            ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,<Rm>
+            ------------------------------------------------------------ -- SBCS <Rdn>,<Rm>    
+            when ADDS | ADD | ADCS | SUBS | SBCS => 
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
+                update_PC <= '0';
+                mem_access <= false;   
             ------------------------------------------------------------ --  ADD PC,<Rm>
             when ADD_PC =>    
                 WE_val <= '0'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
+                overflow_status <= (others => '0');
                 update_PC <= '1';
                 mem_access <= false;
             ------------------------------------------------------------ -- MULS <Rdm>,<Rn>,<Rdm>     
@@ -180,6 +192,7 @@ begin
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
+                overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;
             ------------------------------------------------------------ -- CMP <Rn>,<Rm>     T1, T2  
@@ -190,6 +203,7 @@ begin
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= true;
+                overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;
                 
@@ -223,13 +237,36 @@ begin
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
+                overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= true;
-                
-            when NOP =>
+            
+            -------------------------------------------------------------------------------------- --  PUSH <registers>
+            -------------------------------------------------------------------------------------- --  POP <registers>
+            when PUSH | POP =>
                 WE_val <= '0';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
+                overflow_status <= (others => '0');
+                update_PC <= '0'; 
+                mem_access <= true;                     
+
+            -------------------------------------------------------------------------------------- --  B <label>
+            when BRANCH =>
+                WE_val <= '0';              
+                mux_ctrl <= B"00";          -- alu_result
+                set_flags <= false;
+                overflow_status <= (others => '0');
+                update_PC <= '0'; 
+                mem_access <= true;       
+                
+                
+                
+            when NOP =>
+                WE_val <= '0';              
+                mux_ctrl <= B"00";          -- alu_result
+                set_flags <= false;
+                overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;    
             ------------------------------------------------------------ -- All undefined instructions        
@@ -470,9 +507,13 @@ begin
             
             -------------------------------------------------------------------------------------- --  PUSH <registers>
             -------------------------------------------------------------------------------------- --  POP <registers>
-                        
             when PUSH | POP =>
                  alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used                       
+
+            -------------------------------------------------------------------------------------- --  B <label>
+            when BRANCH =>
+                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used                       
+
              
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when NOP =>

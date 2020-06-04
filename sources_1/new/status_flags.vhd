@@ -116,7 +116,10 @@ begin
                         N <= to_bit (result(31)); 
                         if (to_integer(unsigned(result)) = 0) then Z <= '1'; else Z <= '0'; end if;
                         C <= to_bit(C_in);
-                        if ((overflow_status = B"011") or (overflow_status = B"100")) then V <= '1'; else V <= '0'; end if;    
+                        if ((overflow_status = B"011") or
+                            (overflow_status = B"101") or 
+                            (overflow_status = B"100") or
+                            (overflow_status = B"010")) then V <= '1'; else V <= '0'; end if;    
                     ------------------------------------------------------------ -- MULS <Rdm>,<Rn>,<Rdm>     
                     when MULS =>
                         -- APSR.N = result<31>;

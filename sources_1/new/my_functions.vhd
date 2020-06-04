@@ -37,6 +37,7 @@ package helper_funcs is
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     function to_std_logic (in_bit: bit) return std_logic;
     function to_std_logic (in_bit: boolean) return std_logic;
+    function sign_ext (in_byte: std_logic_vector(7 downto 0)) return std_logic_vector;
    
     
     -- Vector Table
@@ -104,7 +105,11 @@ package helper_funcs is
         s_DATA_MEM_ACCESS_EXECUTE_POP_R5,
         s_DATA_MEM_ACCESS_EXECUTE_POP_R6,
         s_DATA_MEM_ACCESS_EXECUTE_POP_R7,
-        s_DATA_MEM_ACCESS_EXECUTE_POP_PC
+        s_DATA_MEM_ACCESS_EXECUTE_POP_PC,
+        s_BRANCH_PC_UPDATED,
+        s_BRANCH_Phase1,
+        s_BRANCH_Phase2,
+        s_BRANCH_Phase3
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -121,7 +126,8 @@ package helper_funcs is
         LDRSB, LDR_label, LDM,
         STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
                STR_SP_imm8, STM,
-        PUSH, POP,      
+        PUSH, POP,
+        BRANCH,      
         NOP,
         NOT_DEF
         );  
@@ -141,7 +147,10 @@ package helper_funcs is
         sel_WDATA,              -- Put data on the HADDR to be written into memory
         sel_VECTOR_TABLE,
         sel_SP_main_addr,
-        sel_SP_main_addr_plus_4
+        sel_SP_main_addr_plus_4,
+        sel_PC_plus_4,
+        sel_BRANCH,
+        sel_hardd_NC
     );   
    
     type gp_data_in_ctrl_t is (
@@ -206,7 +215,24 @@ package helper_funcs is
         V  : bit;                              -- Overflow
         EN : bit_vector (5 downto 0);          -- Exception Number.
         T  : bit;                              -- Thumb code is executed.
-    end record;        
+    end record;       
+    
+    subtype cond_t is std_logic_vector (3 downto 0);
+    constant EQ : cond_t := B"0000"; 
+    constant NE : cond_t := B"0001"; 
+    constant CS : cond_t := B"0010"; 
+    constant CC : cond_t := B"0011"; 
+    constant MI : cond_t := B"0100"; 
+    constant PL : cond_t := B"0101"; 
+    constant VS : cond_t := B"0110"; 
+    constant VC : cond_t := B"0111"; 
+    constant HI : cond_t := B"1000"; 
+    constant LS : cond_t := B"1001"; 
+    constant GE : cond_t := B"1010"; 
+    constant LT : cond_t := B"1011"; 
+    constant GT : cond_t := B"1100"; 
+    constant LE : cond_t := B"1101"; 
+    constant AL : cond_t := B"1110"; 
     
     -- Cortex-M0 functions
     function IsAligned (
@@ -214,12 +240,13 @@ package helper_funcs is
         size : in integer) return boolean;
  
     function run_next_state_calc (
-        access_mem      : boolean; 
+        any_access_mem  : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean; 
         imm8_value      : std_logic_vector (7 downto 0);
-        LR_PC           : std_logic) return  core_state_t; 
+        LR_PC           : std_logic;
+        cond_satisfied  : boolean) return  core_state_t; 
   
 end  helper_funcs;
 
@@ -315,20 +342,30 @@ package body helper_funcs is
        return ret; 
     end function;
     
+    function sign_ext (in_byte: std_logic_vector(7 downto 0)) return std_logic_vector is
+        variable ret : std_logic_vector(31 downto 0);
+    begin
+        if (in_byte(7) = '1') then
+            ret := x"FFFF_FF" & in_byte;
+        else
+            ret := x"0000_00" & in_byte;
+        end if;
+        return ret; 
+    end function;
    
     
      function run_next_state_calc (
-        access_mem      : boolean; 
+        any_access_mem  : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean;
         imm8_value      : std_logic_vector (7 downto 0);
-        LR_PC           : std_logic) return core_state_t is
+        LR_PC           : std_logic;
+        cond_satisfied  : boolean) return core_state_t is
         variable next_state : core_state_t;
       begin
-            -- If you modify something here then remember to copy it to s_FINISH_STM
             -- CHECK if instruction needs memory access
-            if (access_mem = true) then 
+            if (any_access_mem = true) then 
                 if (access_mem_mode = MEM_ACCESS_READ) then 
                     if (execution_cmd = LDM) then
                         next_state := s_DATA_MEM_ACCESS_LDM;
@@ -388,11 +425,24 @@ package body helper_funcs is
                 end if;      
                 -- CHECK if instruction updates PC
             elsif (PC_updated = true) then
-                next_state := s_PC_UPDATED;
+                 report "PC_updated = true, cond_satisfied= " &  boolean'image(cond_satisfied) & 
+                    "execution_cmd= " & executor_cmds_t'image(execution_cmd) severity note;  
+                if (execution_cmd = BRANCH) then    
+                   
+                    if (cond_satisfied = true) then
+                         next_state := s_BRANCH_PC_UPDATED;
+                    else
+                         next_state := s_RUN;
+                    end if;
+                else
+                    next_state := s_PC_UPDATED;
+                end if;  
             else    
                 next_state := s_RUN;     
             end if;  
-        
+                
+                
+                
         return  next_state; 
   end function;
 
