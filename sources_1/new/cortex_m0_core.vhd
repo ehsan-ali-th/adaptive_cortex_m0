@@ -147,6 +147,7 @@ architecture Behavioral of cortex_m0_core is
             current_flags : in flag_t;
             imm8 : in std_logic_vector (7 downto 0);
             imm8_value : in std_logic_vector (7 downto 0);
+            imm11_value_10_downto_8 : in std_logic_vector (2 downto 0);
             LR_PC : in std_logic;
             number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
             execution_cmd : in executor_cmds_t;
@@ -429,6 +430,7 @@ begin
                   current_flags => flags,
                            imm8 => imm8_z_ext(7 downto 0),
                      imm8_value => imm8_z_ext_value(7 downto 0),
+        imm11_value_10_downto_8 => imm8_z_ext_value(10 downto 8),
                           LR_PC => LR_PC,
          number_of_ones_initial => number_of_ones_initial,
                   execution_cmd => command_value,
@@ -762,30 +764,31 @@ begin
         end if;
     end process;
 
-    imm8_z_ext_value_p: process  (command_value, imm8) begin
+    imm8_z_ext_value_p: process  (command_value, gp_addrA_value, imm8) begin
         case (command_value) is
-            when MOVS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when ADDS_imm3   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when ADDS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when SUBS_imm3   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when SUBS_imm8   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when CMP_imm8    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LSLS_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LSRS_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when ASRS_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDR_imm5    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDRH_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDRB_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDR_label   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when LDM         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when STR_imm5    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when STRH_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when STRB_imm5   => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when STR_SP_imm8 => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when STM         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when PUSH        => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when POP         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
-            when BRANCH      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when MOVS_imm8      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADDS_imm3      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADDS_imm8      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUBS_imm3      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUBS_imm8      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when CMP_imm8       => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LSLS_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LSRS_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ASRS_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_imm5       => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDRH_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDRB_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_label      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDM            => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STR_imm5       => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STRH_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STRB_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STR_SP_imm8    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when STM            => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when PUSH           => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when POP            => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when BRANCH         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when BRANCH_imm11   => imm8_z_ext_value <= x"0000_0" & '0' & gp_addrA_value(2 downto 0) & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process; 
@@ -975,6 +978,7 @@ begin
         variable     Rm_decode : string(1 to 2);   -- Rd register specification
         variable     Rn_decode : string(1 to 2);   -- Rn register specification
         variable     imm8_decode : string(1 to 3);   -- immediate 8 specification
+        variable     imm11_decode : string(1 to 4);   -- immediate 8 specification
         variable     LR_PC_decode : string(1 to 2);
         variable     cond_decode : string(1 to 2);
     begin  
@@ -982,6 +986,7 @@ begin
         Rm_decode (1) := 'r';
         Rn_decode (1) := 'r';
         imm8_decode (1) :=  '#';
+        imm11_decode (1) :=  '#';
         LR_PC_decode (1) := '#';
         
         if internal_reset = '1' then
@@ -1285,7 +1290,7 @@ begin
                 imm8_decode (2) :=  hexcharacter (current_instruction (7 downto 4));
                 imm8_decode (3) :=  hexcharacter (current_instruction (3 downto 0));  
                 cortex_m0_opcode <= "POP " & "PC=" & LR_PC_decode & ",{" & imm8_decode & "}"  & "  ";                                                    
-           ------------------------------------------------------------------------------------- -- B <label>
+           ------------------------------------------------------------------------------------- -- B <label>   T1
            elsif std_match(current_instruction(15 downto 12), "1101") then    
                 case (current_instruction(11 downto 8)) is
                     when EQ => cond_decode := "EQ";
@@ -1307,7 +1312,14 @@ begin
                 end case;         
                 imm8_decode (2) :=  hexcharacter (current_instruction (7 downto 4));
                 imm8_decode (3) :=  hexcharacter (current_instruction (3 downto 0));  
-                cortex_m0_opcode <= "B" & cond_decode & " ,{" & imm8_decode & "}"  & "       ";                    
+                cortex_m0_opcode <= "B" & cond_decode & " ,{" & imm8_decode & "}"  & "       ";
+           ------------------------------------------------------------------------------------- -- B <label>   T2
+           elsif std_match(current_instruction(15 downto 11), "11100") then    
+                imm11_decode (2) :=  hexcharacter ('0' & current_instruction (10 downto 8));
+                imm11_decode (3) :=  hexcharacter (current_instruction (7 downto 4));
+                imm11_decode (4) :=  hexcharacter (current_instruction (3 downto 0));  
+                cortex_m0_opcode <= "B" & " ,{" & imm11_decode & "}"  & "        ";                    
+                                       
               
            end if;
         end if;

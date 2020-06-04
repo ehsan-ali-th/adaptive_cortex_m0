@@ -37,7 +37,6 @@ package helper_funcs is
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     function to_std_logic (in_bit: bit) return std_logic;
     function to_std_logic (in_bit: boolean) return std_logic;
-    function sign_ext (in_byte: std_logic_vector(7 downto 0)) return std_logic_vector;
    
     
     -- Vector Table
@@ -127,7 +126,7 @@ package helper_funcs is
         STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
                STR_SP_imm8, STM,
         PUSH, POP,
-        BRANCH,      
+        BRANCH,  BRANCH_imm11,  
         NOP,
         NOT_DEF
         );  
@@ -342,16 +341,7 @@ package body helper_funcs is
        return ret; 
     end function;
     
-    function sign_ext (in_byte: std_logic_vector(7 downto 0)) return std_logic_vector is
-        variable ret : std_logic_vector(31 downto 0);
-    begin
-        if (in_byte(7) = '1') then
-            ret := x"FFFF_FF" & in_byte;
-        else
-            ret := x"0000_00" & in_byte;
-        end if;
-        return ret; 
-    end function;
+  
    
     
      function run_next_state_calc (
@@ -428,12 +418,13 @@ package body helper_funcs is
                  report "PC_updated = true, cond_satisfied= " &  boolean'image(cond_satisfied) & 
                     "execution_cmd= " & executor_cmds_t'image(execution_cmd) severity note;  
                 if (execution_cmd = BRANCH) then    
-                   
                     if (cond_satisfied = true) then
                          next_state := s_BRANCH_PC_UPDATED;
                     else
                          next_state := s_RUN;
                     end if;
+                elsif (execution_cmd = BRANCH_imm11) then  
+                    next_state := s_BRANCH_PC_UPDATED;       
                 else
                     next_state := s_PC_UPDATED;
                 end if;  

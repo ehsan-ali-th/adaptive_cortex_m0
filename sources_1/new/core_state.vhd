@@ -45,6 +45,7 @@ entity core_state is
         current_flags : in flag_t;
         imm8 : in std_logic_vector (7 downto 0);
         imm8_value : in std_logic_vector (7 downto 0);
+        imm11_value_10_downto_8 : in std_logic_vector (2 downto 0);
         LR_PC : in std_logic;
         number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
         execution_cmd : in executor_cmds_t;
@@ -80,6 +81,9 @@ entity core_state is
 end core_state;
     
 architecture Behavioral of core_state is
+
+    
+    
     signal m0_core_state :  core_state_t;
     signal m0_core_next_state :  core_state_t;
     signal size_of_executed_instruction : unsigned (31 downto 0);
@@ -98,16 +102,50 @@ architecture Behavioral of core_state is
     signal cond_satisfied : boolean;
     signal cond_satisfied_value : boolean;
     signal branch_target_address_value : signed (31 downto 0);
+    signal imm11_value : std_logic_vector(10 downto 0);
+
+    signal imm8_value_sign_ext : std_logic_vector(31 downto 0);
+    signal imm11_value_sign_ext : std_logic_vector(31 downto 0);
+    
+    component sign_ext is
+        generic(
+            in_byte_width : integer := 8
+        );
+        Port (
+            in_byte:    in  std_logic_vector(in_byte_width - 1 downto 0);
+            ret:        out std_logic_vector(31 downto 0)
+        );
+    end component;
      
 begin
 
     any_access_mem <= access_mem or LDM_STM_access_mem;
     PUSH_POP_number_of_ones_initial <= unsigned (number_of_ones_initial) + LR_PC;
+    imm11_value <= imm11_value_10_downto_8 & imm8_value;
     
-     branch_target_address_value_p: process (PC_execute, imm8_value) begin
-        branch_target_address_value <= 
-            signed(PC_execute) + (shift_left (signed (sign_ext (imm8_value)), 1) + 4);
+    sign_extend_imm8: sign_ext port map (
+        in_byte => imm8_value,
+        ret => imm8_value_sign_ext
+    );
+    
+    sign_extend_imm11: sign_ext generic map (in_byte_width => 11) port map (
+        in_byte => imm11_value,
+        ret => imm11_value_sign_ext
+    );
+    
+    
+    branch_target_address_value_p: process (execution_cmd, PC_execute, imm8_value_sign_ext, imm11_value_sign_ext) begin
+        if (execution_cmd = BRANCH) then
+            branch_target_address_value <= 
+                signed(PC_execute) + (shift_left (signed (imm8_value_sign_ext), 1) + 4);
+        elsif (execution_cmd = BRANCH_imm11) then
+            branch_target_address_value <= 
+                signed(PC_execute) + (shift_left (signed (imm11_value_sign_ext), 1) + 4);
+        else
+             branch_target_address_value <=  x"0000_0000"; 
+        end if;        
     end process;     
+    
     
 
     check_branch_cond_p: process (cond, current_flags) begin
@@ -170,7 +208,7 @@ begin
         else    
             if (rising_edge(clk)) then
                 cond_satisfied <= cond_satisfied_value;
-                if (execution_cmd = BRANCH) then
+                if (execution_cmd = BRANCH or execution_cmd = BRANCH_imm11) then
                     branch_target_address <= std_logic_vector (branch_target_address_value);
                 end if;    
                 SP_main <= SP_main_value;

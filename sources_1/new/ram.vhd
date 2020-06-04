@@ -38,14 +38,14 @@ entity ram is
         WCLK : in std_logic;
         reset : in std_logic;
         WE : in std_logic;
-        WR_ADDR: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0'); -- Wrtie address
-        DI: in std_logic_vector (DATA_WIDTH-1 downto 0);
-        ADDRA: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address A
-        DOA: out std_logic_vector (DATA_WIDTH-1 downto 0);
-        ADDRB: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address B
-        DOB: out std_logic_vector (DATA_WIDTH-1 downto 0);  
-        ADDRC: in std_logic_vector (ADDRESS_WIDTH-1 downto 0) := (OTHERS => '0');   -- Read address C
-        DOC: out std_logic_vector (DATA_WIDTH-1 downto 0)  
+        WR_ADDR: in std_logic_vector (ADDRESS_WIDTH - 1 downto 0) := (OTHERS => '0'); -- Wrtie address
+        DI: in std_logic_vector (DATA_WIDTH - 1 downto 0);
+        ADDRA: in std_logic_vector (ADDRESS_WIDTH - 1 downto 0) := (OTHERS => '0');   -- Read address A
+        DOA: out std_logic_vector (DATA_WIDTH - 1 downto 0);
+        ADDRB: in std_logic_vector (ADDRESS_WIDTH - 1 downto 0) := (OTHERS => '0');   -- Read address B
+        DOB: out std_logic_vector (DATA_WIDTH - 1 downto 0);  
+        ADDRC: in std_logic_vector (ADDRESS_WIDTH - 1 downto 0) := (OTHERS => '0');   -- Read address C
+        DOC: out std_logic_vector (DATA_WIDTH - 1 downto 0)  
     );
 end ram;
 
