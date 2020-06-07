@@ -946,7 +946,7 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= instruction (8);  
                 cond <= B"1111";
-            ----------------------------------------------------------------------------------- -- B <label>    T1
+            ----------------------------------------------------------------------------------- -- B <label>    T1 (Conditional)
             elsif (std_match(opcode, "1101--"))  then       
                 gp_WR_addr <= B"0000";
                 gp_addrA <= B"0000" ;                     
@@ -963,13 +963,13 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= '0';         
                 cond <= instruction (11 downto 8);
-            ----------------------------------------------------------------------------------- -- B <label>    T2
+            ----------------------------------------------------------------------------------- -- B <label>    T2 (Unconditional)
             elsif (std_match(opcode, "11100-"))  then       
                 gp_WR_addr <= B"0000";
-                gp_addrA <= '0' & instruction (10 downto 8);            -- imm11(10 downto 8 = <label>                   
+                gp_addrA <= '0' & instruction (10 downto 8);            -- imm11 (10 downto 8) = <label>                   
                 gp_addrB <= B"0000";   
                 gp_addrC <=  B"0000";                                   -- Will not be used '0' 
-                imm8 <= instruction (7 downto 0);                       -- imm11(7 downto 0) = <label>
+                imm8 <= instruction (7 downto 0);                       -- imm11 (7 downto 0) = <label>
                 execution_cmd <= BRANCH_imm11;
                 destination_is_PC <= true;  
                 access_mem <= false;    
@@ -980,6 +980,24 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= '0';         
                 cond <= instruction (11 downto 8);    
+            ----------------------------------------------------------------------------------- -- BL <label> HI
+            elsif (std_match(opcode, "11110-"))  then       
+                gp_WR_addr <= B"0000";
+                gp_addrA <= '0' & instruction (10 downto 8);           -- BL_S & imm10 (10 downto 8) = <label>                   
+                gp_addrB <= B"0000";   
+                gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                imm8 <= instruction (7 downto 0);                       -- imm10 (7 downto 0) = <label>
+                execution_cmd <= BL;
+                destination_is_PC <= true;  
+                access_mem <= false;    
+                use_base_register <= false;   
+                mem_load_size <= WORD;
+                mem_load_sign_ext <= false;   
+                LDM_STM_access_mem <= false;     
+                access_mem_mode <= MEM_ACCESS_READ;
+                LR_PC <= '0';         
+                cond <= instruction (11 downto 8);        
+           
             else
                 null;    
             end if;   

@@ -40,7 +40,7 @@ entity hrdata_bus_master is
          reset : in std_logic;
          hrdata_ctrl : in hrdata_ctrl_t;	
          hrdata : in std_logic_vector(31 downto 0);	
-         hrdata_progrm_value : out std_logic_vector(31 downto 0);	
+         hrdata_program_value : out std_logic_vector(31 downto 0);	
          hrdata_data_value : out std_logic_vector(31 downto 0);	
          ldm_hrdata_value : out std_logic_vector(31 downto 0);	
          SP_main_init : out std_logic_vector(31 downto 0);	
@@ -50,8 +50,8 @@ end hrdata_bus_master;
 
 architecture Behavioral of hrdata_bus_master is
 
-         signal hrdata_progrm_value_cur :  std_logic_vector(31 downto 0);	
-         signal hrdata_progrm_value_ns :  std_logic_vector(31 downto 0);	
+         signal hrdata_program_value_cur :  std_logic_vector(31 downto 0);	
+         signal hrdata_program_value_ns :  std_logic_vector(31 downto 0);	
          
          signal hrdata_data_value_cur :  std_logic_vector(31 downto 0);	
          signal hrdata_data_value_ns :  std_logic_vector(31 downto 0);	
@@ -67,13 +67,13 @@ architecture Behavioral of hrdata_bus_master is
  
 begin
     
-        hrdata_progrm_value_p : process (hrdata_ctrl, hrdata, hrdata_progrm_value_cur) begin
+        hrdata_program_value_p : process (hrdata_ctrl, hrdata, hrdata_program_value_cur) begin
             if (hrdata_ctrl = sel_ALU_RESULT or hrdata_ctrl = sel_LDM_Rn) then
-                hrdata_progrm_value     <= hrdata;
-                hrdata_progrm_value_ns  <= hrdata;
+                hrdata_program_value     <= hrdata;
+                hrdata_program_value_ns  <= hrdata;
             else
-                hrdata_progrm_value     <= hrdata_progrm_value_cur;
-                hrdata_progrm_value_ns  <= hrdata_progrm_value_cur;
+                hrdata_program_value     <= hrdata_program_value_cur;
+                hrdata_program_value_ns  <= hrdata_program_value_cur;
             end if;
         end process;
         
@@ -119,14 +119,14 @@ begin
 
         registers_p : process (clk) begin
             if (reset = '1') then
-                hrdata_progrm_value_cur <= (others => '0');
+                hrdata_program_value_cur <= (others => '0');
                 hrdata_data_value_cur <= (others => '0');
                 ldm_hrdata_value_cur <= (others => '0');
                 SP_main_init_cur <= (others => '0');
                 PC_init_cur <= (others => '0');
             else
                 if (rising_edge(clk)) then
-                    hrdata_progrm_value_cur <= hrdata_progrm_value_ns;
+                    hrdata_program_value_cur <= hrdata_program_value_ns;
                     hrdata_data_value_cur <= hrdata_data_value_ns;
                     ldm_hrdata_value_cur <= ldm_hrdata_value_ns;
                     SP_main_init_cur <= SP_main_init_ns;
