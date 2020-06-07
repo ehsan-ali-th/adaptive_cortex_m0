@@ -164,7 +164,8 @@ package helper_funcs is
         sel_SP_main_init,
         sel_SP_set,
         sel_PC_init,
-        sel_gp_data_in_NC
+        sel_gp_data_in_NC,
+        sel_LR_DATA
     );
     
     type hrdata_ctrl_t is (

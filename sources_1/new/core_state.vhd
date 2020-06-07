@@ -2419,10 +2419,10 @@ begin
                 VT_ctrl <= VT_NONE; 
             when s_BL =>                            
                 refetch_i <= false; 
-                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                gp_data_in_ctrl <= sel_LR_DATA;  
                 hrdata_ctrl <= sel_NC; 
                 disable_fetch <= false; 
-                disable_executor <= true; 
+                disable_executor <= false; 
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false;
                 LDM_STM_capture_base <= false; 

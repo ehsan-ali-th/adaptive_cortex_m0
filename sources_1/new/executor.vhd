@@ -253,15 +253,22 @@ begin
 
             -------------------------------------------------------------------------------------- --  B <label>    T1
             -------------------------------------------------------------------------------------- --  B <label>    T2
-            -------------------------------------------------------------------------------------- --  BL <label>    
-            when BRANCH | BRANCH_imm11 | BL =>
+            
+            when BRANCH | BRANCH_imm11 =>
                 WE_val <= '0';              
                 mux_ctrl <= B"00";          -- alu_result
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
-                mem_access <= true;       
-                
+                mem_access <= true;   
+            -------------------------------------------------------------------------------------- --  BL <label>        
+            when BL =>
+                WE_val <= '1';              -- Write to LR register             
+                mux_ctrl <= B"00";          -- alu_result
+                set_flags <= false;
+                overflow_status <= (others => '0');
+                update_PC <= '0'; 
+                mem_access <= true;             
                 
                 
             when NOP =>

@@ -649,6 +649,7 @@ begin
             when sel_STM_total_bytes_wrote  => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when sel_gp_data_in_NC          => gp_data_in <= (others => '0');
             when sel_SP_set                 => gp_data_in <= (others => '0');
+            when sel_LR_DATA                => gp_data_in <= std_logic_vector (unsigned (PC_after_execute) + 4);
             when others                     => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;

@@ -982,8 +982,8 @@ begin
                 cond <= instruction (11 downto 8);    
             ----------------------------------------------------------------------------------- -- BL <label> HI
             elsif (std_match(opcode, "11110-"))  then       
-                gp_WR_addr <= B"0000";
-                gp_addrA <= '0' & instruction (10 downto 8);           -- BL_S & imm10 (10 downto 8) = <label>                   
+                gp_WR_addr <= B"1110";                                  -- Link register    = r14
+                gp_addrA <= '0' & instruction (10 downto 8);            -- BL_S & imm10 (10 downto 8) = <label>                   
                 gp_addrB <= B"0000";   
                 gp_addrC <=  B"0000";                                   -- Will not be used '0' 
                 imm8 <= instruction (7 downto 0);                       -- imm10 (7 downto 0) = <label>
