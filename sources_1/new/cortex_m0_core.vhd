@@ -150,7 +150,7 @@ architecture Behavioral of cortex_m0_core is
             imm11_value_10_downto_8 : in std_logic_vector (2 downto 0);
             LR_PC : in std_logic;
             number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
-            execution_cmd : in executor_cmds_t;
+            execution_cmd_value : in executor_cmds_t;
             LDM_STM_access_mem : in boolean;
             new_PC : in std_logic_vector (31 downto 0);
             access_mem_mode : IN access_mem_mode_t;
@@ -249,12 +249,15 @@ architecture Behavioral of cortex_m0_core is
 	signal imm8_z_ext : std_logic_vector(31 downto 0) := (others => '0');			
 	signal imm8_z_ext_value : std_logic_vector(31 downto 0);			
     signal internal_reset: std_logic := '1';
-    signal VT_addr : std_logic_vector(31 downto 0);
-	signal hrdata_NC : std_logic_vector(31 downto 0);			-- HRDATA Not Connected
+    signal VT_addr : std_logic_vector (31 downto 0);
+	signal hrdata_NC : std_logic_vector (31 downto 0);			-- HRDATA Not Connected
 	signal pos_A_is_multi_cycle : boolean;
-	signal PC_plus_4 : std_logic_vector(31 downto 0);
+	signal PC_plus_4 : std_logic_vector (31 downto 0);
 	signal is_32bit_instruction : boolean;
 	signal is_32bit_instruction_value : boolean;
+	signal PC_after_execute_plus_4 : std_logic_vector (31 downto 0);
+	signal new_PC : std_logic_vector (31 downto 0);
+	
    
 	-- Registers after decoder
 	signal gp_WR_addr : std_logic_vector(3 downto 0) := (others => '0');	
@@ -429,9 +432,9 @@ begin
         imm11_value_10_downto_8 => imm8_z_ext_value(10 downto 8),
                           LR_PC => LR_PC,
          number_of_ones_initial => number_of_ones_initial,
-                  execution_cmd => command_value,
+            execution_cmd_value => command_value,
              LDM_STM_access_mem => LDM_STM_access_mem_value,
-                         new_PC => result, 
+                         new_PC => new_PC, 
                 access_mem_mode => access_mem_mode,
                    SP_main_init => SP_main_init,
                         PC_init => PC_init,
@@ -488,6 +491,13 @@ begin
     LDM_total_bytes_read <= std_logic_vector (shift_left(unsigned('0' & number_of_ones_initial), 2)); --   
     PC_plus_4 <= std_logic_vector ((unsigned (PC) + 4));
     
+    new_PC_p : process (result, command, gp_ram_dataA) begin
+        if (command = BX) then
+            new_PC <= gp_ram_dataA;    
+        else
+            new_PC <= result;
+        end if;
+    end process;
       
     
 
@@ -578,6 +588,7 @@ begin
                 when    sel_SP_main_addr_plus_4  =>  HADDR <= std_logic_vector (POP_mem_addr);
                 when       sel_PC_plus_4         =>  HADDR <=  PC_plus_4 (31 downto 2) & B"00";  
                 when          sel_BRANCH         =>  HADDR <= std_logic_vector (branch_target_address);
+                when           sel_BX_Rm         =>  HADDR <= new_PC;
                 when        others               =>  null;
             end case;
 --        end if;
@@ -638,7 +649,10 @@ begin
          end if;   
     end process;
     
-     gp_data_in_p: process (gp_data_in_ctrl, result, hrdata_data_value_sized, ldm_hrdata_value, LDM_total_bytes_read, gp_ram_dataA) begin
+    PC_after_execute_plus_4 <= std_logic_vector (unsigned (PC_after_execute) + 4);
+    
+    gp_data_in_p: process (gp_data_in_ctrl, result, hrdata_data_value_sized, ldm_hrdata_value, 
+                            PC_after_execute, LDM_total_bytes_read, gp_ram_dataA) begin
         case (gp_data_in_ctrl) is 
             when sel_ALU_RESULT             => gp_data_in <= result;
             when sel_HRDATA_VALUE_SIZED     => gp_data_in <= hrdata_data_value_sized;  
@@ -649,7 +663,7 @@ begin
             when sel_STM_total_bytes_wrote  => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when sel_gp_data_in_NC          => gp_data_in <= (others => '0');
             when sel_SP_set                 => gp_data_in <= (others => '0');
-            when sel_LR_DATA                => gp_data_in <= std_logic_vector (unsigned (PC_after_execute) + 4);
+            when sel_LR_DATA                => gp_data_in <= PC_after_execute_plus_4(31 downto 1) & '1';
             when others                     => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;
