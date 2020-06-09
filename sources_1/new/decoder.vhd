@@ -997,7 +997,7 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= '0';         
                 cond <=  B"1111";    
-            ----------------------------------------------------------------------------------- -- BX Rm
+            ----------------------------------------------------------------------------------- -- BX Rm 
             elsif (std_match(opcode, "010001") and instruction(9 downto 7) = B"110")  then       
                 gp_WR_addr <= B"0000";
                 gp_addrA <= instruction (6 downto 3);                   -- Rm               
@@ -1013,7 +1013,24 @@ begin
                 LDM_STM_access_mem <= false;     
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= '0';         
-                cond <= B"1111";    
+                cond <= B"1111";   
+            ----------------------------------------------------------------------------------- -- BLX Rm
+            elsif (std_match(opcode, "010001") and instruction(9 downto 7) = B"111")  then       
+                gp_WR_addr <= B"0000";
+                gp_addrA <= instruction (6 downto 3);                   -- Rm               
+                gp_addrB <= B"0000";   
+                gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                imm8 <= B"0000_0000";
+                execution_cmd <= BLX;
+                destination_is_PC <= true;  
+                access_mem <= false;    
+                use_base_register <= false;   
+                mem_load_size <= WORD;
+                mem_load_sign_ext <= false;   
+                LDM_STM_access_mem <= false;     
+                access_mem_mode <= MEM_ACCESS_READ;
+                LR_PC <= '0';         
+                cond <= B"1111";     
            
             else
                 null;    

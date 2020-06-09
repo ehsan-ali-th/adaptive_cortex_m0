@@ -202,7 +202,9 @@ begin
             branch_target_address_value <= 
                 signed(PC_after_execute) + (signed (BL_target_address_value_sign_ext) + 4);
         elsif (execution_cmd = BX ) then
-            branch_target_address_value <= signed (new_PC);               
+            branch_target_address_value <= signed (new_PC);     -- Rm
+        elsif (execution_cmd = BLX ) then
+            branch_target_address_value <= signed (new_PC);     -- Rm             
         else
             branch_target_address_value <=  x"0000_0000"; 
         end if;        
@@ -277,7 +279,7 @@ begin
                     if (execution_cmd_value = BRANCH or execution_cmd_value = BRANCH_imm11) then        -- BRANCH_imm11 covers BL and unconditional branch
                         branch_target_address <= std_logic_vector (branch_target_address_value);
 --                        update_target_branch_triggered <= true;
-                    elsif (m0_core_state = s_BL) then
+                    elsif (m0_core_state = s_BL or m0_core_state = s_BRANCH_Phase1) then
                         branch_target_address <= std_logic_vector (branch_target_address_value);    
                  
 --                        update_target_branch_triggered <= true;
@@ -297,7 +299,12 @@ begin
                     PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
                     PC_decode <= std_logic_vector (branch_target_address_value);
                     PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;  
+                    PC_after_execute <= PC_execute;
+                elsif (m0_core_state = s_BLX_PC_UPDATED) then 
+                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                    PC_decode <= std_logic_vector (branch_target_address_value);
+                    PC_execute <= PC_decode;
+                    PC_after_execute <= PC_execute;        
                 elsif (m0_core_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
                     PC <= ldm_hrdata_value;
                     PC_decode <= PC;
@@ -992,6 +999,12 @@ begin
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
             when  s_BL =>
                 m0_core_next_state <= s_BRANCH_UNCOND_PC_UPDATED;   
+            when  s_BLX_PC_UPDATED =>
+                m0_core_next_state <= s_BLX_Phase1;   
+            when s_BLX_Phase1 =>
+                m0_core_next_state <= s_BLX_Phase2;
+            when s_BLX_Phase2 =>
+                m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
                                                                                                                                        
                when others => m0_core_next_state <= s_RESET;
             end case;
@@ -2425,7 +2438,7 @@ begin
                 VT_ctrl <= VT_NONE;            
             when s_BL =>                            
                 refetch_i <= false; 
-                gp_data_in_ctrl <= sel_LR_DATA;  
+                gp_data_in_ctrl <= sel_LR_DATA_BL;  
                 hrdata_ctrl <= sel_NC; 
                 disable_fetch <= false; 
                 disable_executor <= false; 
@@ -2435,6 +2448,43 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+            when s_BLX_PC_UPDATED =>                            
+                refetch_i <= false; 
+                gp_data_in_ctrl <= sel_LR_DATA_BLX;  
+                hrdata_ctrl <= sel_NC; 
+                disable_fetch <= false; 
+                disable_executor <= false; 
+                haddr_ctrl <= sel_BLX_Rm;
+                gp_addrA_executor_ctrl <= false;
+                LDM_STM_capture_base <= false; 
+                LDM_cur_target_reg <= REG_NONE;
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_BLX_Phase1 =>    
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= false;                      
+                disable_fetch <= false;
+                --haddr_ctrl <= sel_PC_plus_4;
+                haddr_ctrl <= sel_PC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                hrdata_ctrl <= sel_ALU_RESULT;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+            when s_BLX_Phase2 =>    
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= any_access_mem; 
+                disable_fetch <= any_access_mem;
+                haddr_ctrl <= sel_hardd_NC;
+                gp_data_in_ctrl <= sel_ALU_RESULT; 
+                hrdata_ctrl <= sel_ALU_RESULT;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;    
            
             when others => 
                 refetch_i <= false; 

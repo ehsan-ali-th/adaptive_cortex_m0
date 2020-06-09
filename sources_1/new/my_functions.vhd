@@ -110,7 +110,10 @@ package helper_funcs is
         s_BRANCH_Phase2,
         s_BRANCH_UNCOND_PC_UPDATED,
         s_BL,
-        s_BX_PC_UPDATED
+        s_BX_PC_UPDATED,
+        s_BLX_PC_UPDATED,
+        s_BLX_Phase1,
+        s_BLX_Phase2
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -128,7 +131,7 @@ package helper_funcs is
         STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
                STR_SP_imm8, STM,
         PUSH, POP,
-        BRANCH, BRANCH_imm11, BL, BL2, BX,
+        BRANCH, BRANCH_imm11, BL, BL2, BX, BLX,
         NOP,
         NOT_DEF
         );  
@@ -152,7 +155,8 @@ package helper_funcs is
         sel_PC_plus_4,
         sel_BRANCH,
         sel_hardd_NC,
-        sel_BX_Rm
+        sel_BX_Rm,
+        sel_BLX_Rm
     );   
    
     type gp_data_in_ctrl_t is (
@@ -165,7 +169,8 @@ package helper_funcs is
         sel_SP_set,
         sel_PC_init,
         sel_gp_data_in_NC,
-        sel_LR_DATA
+        sel_LR_DATA_BL,
+        sel_LR_DATA_BLX
     );
     
     type hrdata_ctrl_t is (
@@ -431,8 +436,10 @@ package body helper_funcs is
                     next_state := s_BRANCH_UNCOND_PC_UPDATED;    
                 elsif (execution_cmd = BL) then  
                     next_state := s_BL;
-                 elsif (execution_cmd = BX) then  
+                elsif (execution_cmd = BX) then  
                     next_state := s_BX_PC_UPDATED;                
+                elsif (execution_cmd = BLX) then  
+                    next_state := s_BLX_PC_UPDATED;                
                 else
                     next_state := s_PC_UPDATED;
                 end if;  

@@ -256,13 +256,15 @@ architecture Behavioral of cortex_m0_core is
 	signal is_32bit_instruction : boolean;
 	signal is_32bit_instruction_value : boolean;
 	signal PC_after_execute_plus_4 : std_logic_vector (31 downto 0);
+	signal PC_after_execute_plus_2 : std_logic_vector (31 downto 0);
 	signal new_PC : std_logic_vector (31 downto 0);
 	
    
 	-- Registers after decoder
 	signal gp_WR_addr : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_WR_addr_value : std_logic_vector(3 downto 0) := (others => '0');	
-	signal gp_WR_addr_final : std_logic_vector(3 downto 0) := (others => '0');	
+	signal gp_WR_addr_final : std_logic_vector(3 downto 0) := (others => '0');
+    signal gp_WR_addr_non_xxM : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_addrA : std_logic_vector(3 downto 0) := (others => '0');	
 	signal gp_addrB : std_logic_vector(3 downto 0) := (others => '0');			
 	signal gp_addrC : std_logic_vector(3 downto 0) := (others => '0');			
@@ -492,7 +494,7 @@ begin
     PC_plus_4 <= std_logic_vector ((unsigned (PC) + 4));
     
     new_PC_p : process (result, command, gp_ram_dataA) begin
-        if (command = BX) then
+        if (command = BX or command = BLX) then
             new_PC <= gp_ram_dataA;    
         else
             new_PC <= result;
@@ -589,6 +591,7 @@ begin
                 when       sel_PC_plus_4         =>  HADDR <=  PC_plus_4 (31 downto 2) & B"00";  
                 when          sel_BRANCH         =>  HADDR <= std_logic_vector (branch_target_address);
                 when           sel_BX_Rm         =>  HADDR <= new_PC;
+                when          sel_BLX_Rm         =>  HADDR <= new_PC;
                 when        others               =>  null;
             end case;
 --        end if;
@@ -637,7 +640,16 @@ begin
     --- Hardware which drives (Register) module input pins
     ---------------------------------------------------------------------------------------
     
-     gp_WR_addr_final_p: process (LDM_STM_access_mem, LDM_W_STM_R_reg, gp_WR_addr, disable_executor, gp_AddrA) begin
+    
+    gp_WR_addr_non_xxM_p: process (haddr_ctrl, gp_WR_addr) begin
+        if (haddr_ctrl = sel_BLX_Rm) then
+            gp_WR_addr_non_xxM <= B"1110";           -- LR register
+        else
+            gp_WR_addr_non_xxM <= gp_WR_addr;
+        end if;    
+    end process;
+    
+     gp_WR_addr_final_p: process (LDM_STM_access_mem, LDM_W_STM_R_reg, disable_executor, gp_AddrA, gp_WR_addr_non_xxM) begin
          if (LDM_STM_access_mem = true) then
             if (disable_executor = true) then 
                 gp_WR_addr_final <= gp_AddrA;       -- Save the Rn in LDM instruction into gp_AddrA register.
@@ -645,11 +657,12 @@ begin
                 gp_WR_addr_final <= LDM_W_STM_R_reg;
             end if;  
          else
-            gp_WR_addr_final <= gp_WR_addr;
+            gp_WR_addr_final <= gp_WR_addr_non_xxM;
          end if;   
     end process;
     
     PC_after_execute_plus_4 <= std_logic_vector (unsigned (PC_after_execute) + 4);
+    PC_after_execute_plus_2 <= std_logic_vector (unsigned (PC_after_execute) + 2);    
     
     gp_data_in_p: process (gp_data_in_ctrl, result, hrdata_data_value_sized, ldm_hrdata_value, 
                             PC_after_execute, LDM_total_bytes_read, gp_ram_dataA) begin
@@ -663,7 +676,8 @@ begin
             when sel_STM_total_bytes_wrote  => gp_data_in <= std_logic_vector (unsigned (gp_ram_dataA) + unsigned (LDM_total_bytes_read));
             when sel_gp_data_in_NC          => gp_data_in <= (others => '0');
             when sel_SP_set                 => gp_data_in <= (others => '0');
-            when sel_LR_DATA                => gp_data_in <= PC_after_execute_plus_4(31 downto 1) & '1';
+            when sel_LR_DATA_BL             => gp_data_in <= PC_after_execute_plus_4(31 downto 1) & '1';
+            when sel_LR_DATA_BLX            => gp_data_in <= PC_after_execute_plus_2(31 downto 1) & '1';
             when others                     => gp_data_in <= (others => '0'); report " gp_data_in error" severity failure;
         end case;
     end process;
@@ -1357,7 +1371,15 @@ begin
                 imm11_decode (2) :=  hexcharacter ('0' & current_instruction_final (10 downto 8));
                 imm11_decode (3) :=  hexcharacter (current_instruction_final (7 downto 4));
                 imm11_decode (4) :=  hexcharacter (current_instruction_final (3 downto 0));  
-                cortex_m0_opcode <= "BL" & " ,{" & imm11_decode & "}"  & "       ";                               
+                cortex_m0_opcode <= "BL" & " ,{" & imm11_decode & "}"  & "       ";   
+           ------------------------------------------------------------------------------------- -- BX Rm  
+           elsif std_match(current_instruction_final(15 downto 7), "010001110") then    
+                Rm_decode(2) := hexcharacter (current_instruction_final (6 downto 3)); -- Rm 
+                cortex_m0_opcode <= "BX" & " ," & Rm_decode & "           ";   
+           ------------------------------------------------------------------------------------- -- BLX Rm  
+           elsif std_match(current_instruction_final(15 downto 7), "010001111") then    
+                Rm_decode(2) := hexcharacter (current_instruction_final (6 downto 3)); -- Rm 
+                cortex_m0_opcode <= "BLX" & " ," & Rm_decode & "          ";                                        
               
            end if;
         end if;
