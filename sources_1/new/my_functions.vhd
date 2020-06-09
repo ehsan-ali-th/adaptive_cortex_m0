@@ -132,6 +132,7 @@ package helper_funcs is
                STR_SP_imm8, STM,
         PUSH, POP,
         BRANCH, BRANCH_imm11, BL, BL2, BX, BLX,
+        SXTH, SXTB, UXTH, UXTB,
         NOP,
         NOT_DEF
         );  

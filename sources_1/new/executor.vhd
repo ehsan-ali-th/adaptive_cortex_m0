@@ -64,6 +64,16 @@ architecture Behavioral of executor is
             result : out std_logic_vector(31 downto 0)
         );
     end component;
+    
+    component sign_ext is
+        generic(
+            in_byte_width : integer := 8
+        );
+        Port (
+            in_byte:    in  std_logic_vector(in_byte_width - 1 downto 0);
+            ret:        out std_logic_vector(31 downto 0)
+        );
+    end component;
         
     -- signals 
     signal mux_ctrl     :  std_logic_vector (1 downto 0);
@@ -77,6 +87,8 @@ architecture Behavioral of executor is
     signal current_instruction_mem_location :  std_logic_vector (31 downto 0);
     signal mul_result:  std_logic_vector (31 downto 0);
     signal mem_access: boolean;
+    signal sign_extended_16bit:  std_logic_vector (31 downto 0);
+    signal sign_extended_8bit:  std_logic_vector (31 downto 0);
  
 begin
 
@@ -85,6 +97,16 @@ begin
             operand_B =>  operand_B,
             result => mul_result
         );
+        
+   sign_extend_16bit: sign_ext generic map (in_byte_width => 16) port map (
+        in_byte => operand_A(15 downto 0),
+        ret => sign_extended_16bit
+    );    
+    
+    sign_extend_8bit: sign_ext generic map (in_byte_width => 8) port map (
+        in_byte => operand_A(7 downto 0),
+        ret => sign_extended_8bit
+    );  
         
     gp_data_in_p: process  (imm8_z_ext, mux_ctrl, operand_A, operand_B, alu_result) begin
         case mux_ctrl is
@@ -269,9 +291,41 @@ begin
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
-                mem_access <= true;             
+                mem_access <= true;      
+            -------------------------------------------------------------------------------------- -- SXTH <Rd>,<Rm>    
+            when SXTH => 
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                overflow_status <= (others => '0');
+                update_PC <= '0';
+                mem_access <= false;          
+            -------------------------------------------------------------------------------------- -- SXTB <Rd>,<Rm>    
+            when SXTB => 
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                overflow_status <= (others => '0');
+                update_PC <= '0';
+                mem_access <= false;             
+            -------------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm>    
+            when UXTH => 
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                overflow_status <= (others => '0');
+                update_PC <= '0';
+                mem_access <= false;
+           -------------------------------------------------------------------------------------- -- UXTB <Rd>,<Rm>    
+            when UXTB => 
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= true;
+                overflow_status <= (others => '0');
+                update_PC <= '0';
+                mem_access <= false;         
                 
-                
+                        
             when NOP =>
                 WE_val <= '0';              
                 mux_ctrl <= B"00";          -- alu_result
@@ -290,7 +344,7 @@ begin
        end case;  
      end process;
      
-    alu_p: process  (command, operand_A, operand_B, imm8_z_ext, mul_result, current_flags) 
+    alu_p: process  (command, operand_A, operand_B, imm8_z_ext, mul_result, current_flags, sign_extended_16bit, sign_extended_8bit) 
     begin
     
         case (command) is
@@ -526,8 +580,24 @@ begin
             -------------------------------------------------------------------------------------- --  BX Rm  
             -------------------------------------------------------------------------------------- --  BLX Rm  
             when BRANCH | BRANCH_imm11 | BL | BX | BLX =>
-                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used                       
-
+                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used   
+                 
+            -------------------------------------------------------------------------------------- -- SXTH <Rd>,<Rm>
+            when SXTH =>       
+                alu_temp(31 downto 0) <= unsigned (sign_extended_16bit);                           
+                alu_temp(32) <= '0';
+            -------------------------------------------------------------------------------------- -- SXTB <Rd>,<Rm>
+            when SXTB =>       
+                alu_temp(31 downto 0) <= unsigned (sign_extended_8bit);                           
+                alu_temp(32) <= '0'; 
+            -------------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm>
+            when UXTH =>       
+                alu_temp(31 downto 0) <= unsigned (x"0000" & operand_A(15 downto 0));                           
+                alu_temp(32) <= '0';       
+            -------------------------------------------------------------------------------------- -- UXTB <Rd>,<Rm>
+            when UXTB =>       
+                alu_temp(31 downto 0) <= unsigned (x"0000_00" & operand_A(7 downto 0));                           
+                alu_temp(32) <= '0';        
              
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when NOP =>

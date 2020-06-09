@@ -1380,7 +1380,16 @@ begin
            elsif std_match(current_instruction_final(15 downto 7), "010001111") then    
                 Rm_decode(2) := hexcharacter (current_instruction_final (6 downto 3)); -- Rm 
                 cortex_m0_opcode <= "BLX" & " ," & Rm_decode & "          ";                                        
-              
+           ------------------------------------------------------------------------------------- -- SXTH <Rd>,<Rm> 
+           elsif std_match(current_instruction_final(15 downto 6), "1011001000") then    
+                Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
+                cortex_m0_opcode <= "SXTH" & " " & Rd_decode & ", " & Rm_decode & "      ";     
+           ------------------------------------------------------------------------------------- -- SXTB <Rd>,<Rm> 
+           elsif std_match(current_instruction_final(15 downto 6), "1011001001") then    
+                Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
+                cortex_m0_opcode <= "SXTB" & " " & Rd_decode & ", " & Rm_decode & "      ";         
            end if;
         end if;
     end process;
