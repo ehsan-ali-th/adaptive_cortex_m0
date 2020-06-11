@@ -147,6 +147,7 @@ architecture Behavioral of cortex_m0_core is
             current_flags : in flag_t;
             imm8 : in std_logic_vector (7 downto 0);
             imm8_value : in std_logic_vector (7 downto 0);
+            imm11_10_downto_8 : in std_logic_vector (2 downto 0);
             imm11_value_10_downto_8 : in std_logic_vector (2 downto 0);
             LR_PC : in std_logic;
             number_of_ones_initial : in  STD_LOGIC_VECTOR (3 downto 0);
@@ -175,7 +176,8 @@ architecture Behavioral of cortex_m0_core is
             LDM_STM_capture_base : out boolean;
             HWRITE : out std_logic;
             VT_ctrl : out VT_ctrl_t;
-            branch_target_address : out std_logic_vector (31 downto 0)
+            branch_target_address : out std_logic_vector (31 downto 0);
+            branch_target_address_val : out std_logic_vector (31 downto 0)
         );
     end component;
     
@@ -207,7 +209,8 @@ architecture Behavioral of cortex_m0_core is
              hrdata_data_value : out std_logic_vector(31 downto 0);	
              ldm_hrdata_value : out std_logic_vector(31 downto 0);	
              SP_main_init : out std_logic_vector(31 downto 0);	
-             PC_init : out std_logic_vector(31 downto 0)	
+             PC_init : out std_logic_vector(31 downto 0);
+             SVC_addr : out std_logic_vector(31 downto 0)	
          );
     end component;
     
@@ -278,7 +281,7 @@ architecture Behavioral of cortex_m0_core is
 	signal gp_addrA_executor : std_logic_vector(31 downto 0);	
 	signal gp_data_in : std_logic_vector(31 downto 0);	
     signal branch_target_address : std_logic_vector (31 downto 0);
---	signal branch_target_address_value : signed (31 downto 0);
+	signal branch_target_address_value : std_logic_vector (31 downto 0);
    
     -- decoder signals
     signal imm8 : std_logic_vector (7 downto 0);
@@ -324,6 +327,7 @@ architecture Behavioral of cortex_m0_core is
     signal SP_main:  std_logic_vector (31 downto 0);
     signal SP_main_init:  std_logic_vector (31 downto 0);
     signal PC_init:  std_logic_vector (31 downto 0);
+    signal SVC_addr:  std_logic_vector (31 downto 0);
     signal VT_ctrl: VT_ctrl_t;
    
     signal data_memory_addr_i : unsigned (31 downto 0);
@@ -431,6 +435,7 @@ begin
                   current_flags => flags,
                            imm8 => imm8_z_ext(7 downto 0),
                      imm8_value => imm8_z_ext_value(7 downto 0),
+              imm11_10_downto_8 => imm8_z_ext(10 downto 8),
         imm11_value_10_downto_8 => imm8_z_ext_value(10 downto 8),
                           LR_PC => LR_PC,
          number_of_ones_initial => number_of_ones_initial,
@@ -459,7 +464,8 @@ begin
            LDM_STM_capture_base => LDM_STM_capture_base,
                          HWRITE => HWRITE,
                         VT_ctrl => VT_ctrl,
-          branch_target_address => branch_target_address
+          branch_target_address => branch_target_address,
+      branch_target_address_val => branch_target_address_value
         ); 
         
      m0_core_flags: status_flags port map (
@@ -487,24 +493,23 @@ begin
              hrdata_data_value => hrdata_data_value,
              ldm_hrdata_value => ldm_hrdata_value,
              SP_main_init => SP_main_init,
-             PC_init => PC_init
+             PC_init => PC_init,
+             SVC_addr => SVC_addr
          );
         
     LDM_total_bytes_read <= std_logic_vector (shift_left(unsigned('0' & number_of_ones_initial), 2)); --   
     PC_plus_4 <= std_logic_vector ((unsigned (PC) + 4));
     
-    new_PC_p : process (result, command, gp_ram_dataA) begin
+    new_PC_p : process (result, command, gp_ram_dataA, SVC_addr) begin
         if (command = BX or command = BLX) then
-            new_PC <= gp_ram_dataA;    
+            new_PC <= gp_ram_dataA;   
+        elsif (command = SVC) then
+            new_PC <= SVC_addr;        
         else
             new_PC <= result;
         end if;
     end process;
-      
-    
-
-
-
+  
     
     pos_A_is_multi_cycle_p : process (HCLK, internal_reset) begin
        if (internal_reset = '1') then
@@ -575,10 +580,10 @@ begin
     
     HADDR_p : process ( LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, 
                         PC(31 downto 2), LDM_STM_mem_addr, VT_addr, PUSH_mem_addr, POP_mem_addr, 
-                        command_value, branch_target_address) begin
---        if (command_value = BRANCH) then        
---            HADDR <= std_logic_vector (branch_target_address);
---        else                
+                        command_value, branch_target_address_value, new_PC) begin
+        if (command_value = SVC) then        
+            HADDR <= x"0000_002C";      -- SVC exception no. = 11 * 4 = 44 = 0x2C 
+        else                
             case (haddr_ctrl) is
                 when              sel_PC         =>  HADDR <= PC(31 downto 2) & B"00";  
                 when            sel_DATA         =>  HADDR <= data_memory_addr;
@@ -589,12 +594,13 @@ begin
                 when    sel_SP_main_addr         =>  HADDR <= std_logic_vector (PUSH_mem_addr);
                 when    sel_SP_main_addr_plus_4  =>  HADDR <= std_logic_vector (POP_mem_addr);
                 when       sel_PC_plus_4         =>  HADDR <=  PC_plus_4 (31 downto 2) & B"00";  
-                when          sel_BRANCH         =>  HADDR <= std_logic_vector (branch_target_address);
+                when          sel_BRANCH         =>  HADDR <= std_logic_vector (branch_target_address_value);
                 when           sel_BX_Rm         =>  HADDR <= new_PC;
                 when          sel_BLX_Rm         =>  HADDR <= new_PC;
+                when        sel_SVC_Mem_content  =>  HADDR <= new_PC;
                 when        others               =>  null;
             end case;
---        end if;
+        end if;
     end process;   
    
     LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
@@ -1336,7 +1342,12 @@ begin
                 LR_PC_decode (2) := hexcharacter ("000" & current_instruction_final (8));            
                 imm8_decode (2) :=  hexcharacter (current_instruction_final (7 downto 4));
                 imm8_decode (3) :=  hexcharacter (current_instruction_final (3 downto 0));  
-                cortex_m0_opcode <= "POP " & "PC=" & LR_PC_decode & ",{" & imm8_decode & "}"  & "  ";                                                    
+                cortex_m0_opcode <= "POP " & "PC=" & LR_PC_decode & ",{" & imm8_decode & "}"  & "  ";    
+           ------------------------------------------------------------------------------------- -- SVC #<imm8>
+           elsif std_match(current_instruction_final(15 downto 8), "11011111") then    
+                imm8_decode (2) :=  hexcharacter (current_instruction_final (7 downto 4));
+                imm8_decode (3) :=  hexcharacter (current_instruction_final (3 downto 0));  
+                cortex_m0_opcode <= "SVC " & ", " & imm8_decode & "        ";                                                                
            ------------------------------------------------------------------------------------- -- B <label>   T1
            elsif std_match(current_instruction_final(15 downto 12), "1101") then    
                 case (current_instruction_final(11 downto 8)) is
@@ -1389,7 +1400,8 @@ begin
            elsif std_match(current_instruction_final(15 downto 6), "1011001001") then    
                 Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
                 Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
-                cortex_m0_opcode <= "SXTB" & " " & Rd_decode & ", " & Rm_decode & "      ";         
+                cortex_m0_opcode <= "SXTB" & " " & Rd_decode & ", " & Rm_decode & "      ";       
+          
            end if;
         end if;
     end process;

@@ -45,6 +45,7 @@ entity core_state is
         current_flags : in flag_t;
         imm8 : in std_logic_vector (7 downto 0);
         imm8_value : in std_logic_vector (7 downto 0);
+        imm11_10_downto_8 : in std_logic_vector (2 downto 0);
         imm11_value_10_downto_8 : in std_logic_vector (2 downto 0);
         LR_PC : in std_logic;
         number_of_ones_initial : in  std_logic_vector (3 downto 0);
@@ -76,15 +77,13 @@ entity core_state is
         LDM_STM_capture_base : out boolean;
         HWRITE : out std_logic;
         VT_ctrl : out VT_ctrl_t;
-        branch_target_address : out std_logic_vector (31 downto 0)
-        
+        branch_target_address : out std_logic_vector (31 downto 0);
+        branch_target_address_val : out std_logic_vector (31 downto 0)
     );
 end core_state;
     
 architecture Behavioral of core_state is
 
-    
-    
     signal m0_core_state :  core_state_t;
     signal m0_core_next_state :  core_state_t;
     signal size_of_executed_instruction : unsigned (31 downto 0);
@@ -107,9 +106,9 @@ architecture Behavioral of core_state is
     signal BL_target_address_LO : std_logic_vector (15 downto 0);
     signal BL_target_address_value : std_logic_vector (24 downto 0);        -- 25 bits:  S:I1:I2:imm10:imm11:'0'
     signal BL_target_address_value_sign_ext : std_logic_vector (31 downto 0);        
-    signal imm11_value : std_logic_vector(10 downto 0);
-    signal imm8_value_sign_ext : std_logic_vector(31 downto 0);
-    signal imm11_value_sign_ext : std_logic_vector(31 downto 0);
+    signal imm11 : std_logic_vector(10 downto 0);
+    signal imm8_sign_ext : std_logic_vector(31 downto 0);
+    signal imm11_sign_ext : std_logic_vector(31 downto 0);
     signal BL_I1 : std_logic;
     signal BL_I2 : std_logic;
     signal update_target_branch_triggered : boolean;
@@ -137,19 +136,21 @@ begin
     
     PUSH_POP_number_of_ones_initial <= unsigned (number_of_ones_initial) + LR_PC;
     
-    imm11_value <= imm11_value_10_downto_8 & imm8_value;
+    imm11 <= imm11_10_downto_8 & imm8;
+    
+    branch_target_address_val <= std_logic_vector (branch_target_address_value);
     
     BL_I1 <= not (BL_J1 xor BL_S);        -- I1 = NOT(J1 EOR S);
     BL_I2 <= not (BL_J2 xor BL_S);        -- I2 = NOT(J2 EOR S);
      
     sign_extend_imm8: sign_ext port map (
-        in_byte => imm8_value,
-        ret => imm8_value_sign_ext
+        in_byte => imm8,
+        ret => imm8_sign_ext
     );
     
     sign_extend_imm11: sign_ext generic map (in_byte_width => 11) port map (
-        in_byte => imm11_value,
-        ret => imm11_value_sign_ext
+        in_byte => imm11,
+        ret => imm11_sign_ext
     );
     
     sign_extend_BL_target_address_value: sign_ext generic map (in_byte_width => 25) port map (
@@ -190,21 +191,23 @@ begin
     end process;
     
     
-    branch_target_address_value_p: process (execution_cmd, execution_cmd_value, PC_execute, PC_after_execute, imm8_value_sign_ext, 
-                                            imm11_value_sign_ext, BL_target_address_value_sign_ext) begin
-        if (execution_cmd_value = BRANCH) then
+    branch_target_address_value_p: process (execution_cmd, execution_cmd_value, PC_execute, PC_after_execute, imm8_sign_ext, 
+                                            imm11_sign_ext, BL_target_address_value_sign_ext, new_PC) begin
+        if (execution_cmd = BRANCH) then
             branch_target_address_value <= 
-                signed(PC_execute) + (shift_left (signed (imm8_value_sign_ext), 1) + 4);
-        elsif (execution_cmd_value = BRANCH_imm11) then
+                signed(PC_after_execute) + (shift_left (signed (imm8_sign_ext), 1) + 4);
+        elsif (execution_cmd = BRANCH_imm11) then
             branch_target_address_value <= 
-                signed(PC_execute) + (shift_left (signed (imm11_value_sign_ext), 1) + 4);
-        elsif (execution_cmd = BL ) then
+                signed(PC_after_execute) + (shift_left (signed (imm11_sign_ext), 1) + 4);
+        elsif (execution_cmd = BL) then
             branch_target_address_value <= 
                 signed(PC_after_execute) + (signed (BL_target_address_value_sign_ext) + 4);
-        elsif (execution_cmd = BX ) then
+        elsif (execution_cmd = BX) then
             branch_target_address_value <= signed (new_PC);     -- Rm
-        elsif (execution_cmd = BLX ) then
+        elsif (execution_cmd = BLX) then
             branch_target_address_value <= signed (new_PC);     -- Rm             
+        elsif (execution_cmd = SVC) then                        -- new_PC = content of 0x2C location        
+            branch_target_address_value <= signed (new_PC);     -- SVC exception no. = 11 * 4 = 44 = 0x2C    
         else
             branch_target_address_value <=  x"0000_0000"; 
         end if;        
@@ -276,7 +279,7 @@ begin
                 cond_satisfied <= cond_satisfied_value;
                 execution_cmd <= execution_cmd_value;
 --                if (update_target_branch_triggered = false) then
-                    if (execution_cmd_value = BRANCH or execution_cmd_value = BRANCH_imm11) then        -- BRANCH_imm11 covers BL and unconditional branch
+                    if (execution_cmd = BRANCH or execution_cmd = BRANCH_imm11) then        -- BRANCH_imm11 covers BL and unconditional branch
                         branch_target_address <= std_logic_vector (branch_target_address_value);
 --                        update_target_branch_triggered <= true;
                     elsif (m0_core_state = s_BL or m0_core_state = s_BRANCH_Phase1) then
@@ -289,12 +292,16 @@ begin
 --                    update_target_branch_triggered <= false;
 --                end if;    
                 SP_main <= SP_main_value;
-                if ((   m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) or 
-                        m0_core_state = s_BRANCH_UNCOND_PC_UPDATED) then    
-                    PC <=  std_logic_vector (unsigned (branch_target_address) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address);
+                if (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then    
+                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                    PC_decode <= std_logic_vector (branch_target_address_value);
                     PC_execute <= PC_decode;
                     PC_after_execute <= PC_execute;
+                elsif (m0_core_state = s_BRANCH_UNCOND_PC_UPDATED) then    
+                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                    PC_decode <= std_logic_vector (branch_target_address_value);
+                    PC_execute <= PC_decode;
+                    PC_after_execute <= PC_execute;    
                 elsif (m0_core_state = s_BX_PC_UPDATED) then 
                     PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
                     PC_decode <= std_logic_vector (branch_target_address_value);
@@ -304,7 +311,12 @@ begin
                     PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
                     PC_decode <= std_logic_vector (branch_target_address_value);
                     PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;        
+                    PC_after_execute <= PC_execute;
+                elsif (m0_core_state = s_SVC_PC_UPDATED) then 
+                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                    PC_decode <= std_logic_vector (branch_target_address_value);
+                    PC_execute <= PC_decode;
+                    PC_after_execute <= PC_execute;            
                 elsif (m0_core_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
                     PC <= ldm_hrdata_value;
                     PC_decode <= PC;
@@ -1005,6 +1017,8 @@ begin
                 m0_core_next_state <= s_BLX_Phase2;
             when s_BLX_Phase2 =>
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
+            when s_SVC_PC_UPDATED =>
+                m0_core_next_state <= s_BRANCH_Phase1;   
                                                                                                                                        
                when others => m0_core_next_state <= s_RESET;
             end case;
@@ -2377,7 +2391,6 @@ begin
                 LDM_STM_capture_base <= false; 
                 refetch_i <= false;                              
                 disable_fetch <= false; 
-                -- haddr_ctrl <= sel_PC;
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
                 hrdata_ctrl <= sel_ALU_RESULT;  
                 haddr_ctrl <= sel_BRANCH;
@@ -2485,6 +2498,20 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;    
+            when s_SVC_PC_UPDATED =>    
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= any_access_mem; 
+                disable_fetch <= any_access_mem;
+                haddr_ctrl <= sel_SVC_Mem_content;
+                gp_data_in_ctrl <= sel_ALU_RESULT; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;    
+                
+                
            
             when others => 
                 refetch_i <= false; 

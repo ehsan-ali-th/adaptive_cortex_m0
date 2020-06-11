@@ -946,6 +946,23 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= instruction (8);  
                 cond <= B"1111";
+            ----------------------------------------------------------------------------------- -- SVC #<imm8>
+            elsif (std_match(opcode, "110111") and instruction(9 downto 8) = B"11")  then       
+                gp_WR_addr <= B"0000";
+                gp_addrA <=  B"0000";               
+                gp_addrB <= B"0000";   
+                gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                imm8 <= instruction (7 downto 0);                       -- imm8 
+                execution_cmd <= SVC;
+                destination_is_PC <= true;  
+                access_mem <= false;    
+                use_base_register <= false;   
+                mem_load_size <= WORD;
+                mem_load_sign_ext <= false;   
+                LDM_STM_access_mem <= false;     
+                access_mem_mode <= MEM_ACCESS_READ;
+                LR_PC <= '0';         
+                cond <= B"1111";          
             ----------------------------------------------------------------------------------- -- B <label>    T1 (Conditional)
             elsif (std_match(opcode, "1101--"))  then       
                 gp_WR_addr <= B"0000";
@@ -1099,6 +1116,7 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= '0';         
                 cond <= B"1111";     
+          
             else
                 null;    
             end if;   

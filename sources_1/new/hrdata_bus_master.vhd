@@ -44,7 +44,8 @@ entity hrdata_bus_master is
          hrdata_data_value : out std_logic_vector(31 downto 0);	
          ldm_hrdata_value : out std_logic_vector(31 downto 0);	
          SP_main_init : out std_logic_vector(31 downto 0);	
-         PC_init : out std_logic_vector(31 downto 0)	
+         PC_init : out std_logic_vector(31 downto 0);	
+         SVC_addr : out std_logic_vector(31 downto 0)
      );
 end hrdata_bus_master;
 
@@ -64,6 +65,9 @@ architecture Behavioral of hrdata_bus_master is
 
          signal PC_init_cur :  std_logic_vector(31 downto 0);
          signal PC_init_ns :  std_logic_vector(31 downto 0);
+
+         signal SVC_addr_cur :  std_logic_vector(31 downto 0);
+         signal SVC_addr_ns :  std_logic_vector(31 downto 0);
  
 begin
     
@@ -116,6 +120,16 @@ begin
                 PC_init_ns  <= PC_init_cur;
             end if;
         end process;
+         
+        SVC_addr_p : process (hrdata_ctrl, hrdata, SVC_addr_cur) begin
+            if (hrdata_ctrl = sel_SVC) then
+                SVC_addr     <= hrdata;
+                SVC_addr_ns  <= hrdata;
+            else
+                SVC_addr     <= SVC_addr_cur;
+                SVC_addr_ns  <= SVC_addr_cur;
+            end if;
+        end process;
 
         registers_p : process (clk) begin
             if (reset = '1') then
@@ -124,6 +138,7 @@ begin
                 ldm_hrdata_value_cur <= (others => '0');
                 SP_main_init_cur <= (others => '0');
                 PC_init_cur <= (others => '0');
+                SVC_addr_cur <= (others => '0');
             else
                 if (rising_edge(clk)) then
                     hrdata_program_value_cur <= hrdata_program_value_ns;
@@ -131,6 +146,7 @@ begin
                     ldm_hrdata_value_cur <= ldm_hrdata_value_ns;
                     SP_main_init_cur <= SP_main_init_ns;
                     PC_init_cur <= PC_init_ns;
+                    SVC_addr_cur <= SVC_addr_ns;
                 end if;    
             end if;
         end process;

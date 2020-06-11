@@ -278,7 +278,7 @@ begin
             -------------------------------------------------------------------------------------- --  BX Rm 
             when BRANCH | BRANCH_imm11 | BX =>
                 WE_val <= '0';              
-                mux_ctrl <= B"00";          -- alu_result
+                mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
@@ -287,43 +287,33 @@ begin
             -------------------------------------------------------------------------------------- --  BLX <label>           
             when BL | BLX =>
                 WE_val <= '1';              -- Write to LR register             
-                mux_ctrl <= B"00";          -- alu_result
+                mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= true;      
-            -------------------------------------------------------------------------------------- -- SXTH <Rd>,<Rm>    
-            when SXTH => 
-                WE_val <= '1'; 
-                mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
-                overflow_status <= (others => '0');
-                update_PC <= '0';
-                mem_access <= false;          
+            -------------------------------------------------------------------------------------- -- SXTH <Rd>,<Rm>     
             -------------------------------------------------------------------------------------- -- SXTB <Rd>,<Rm>    
-            when SXTB => 
+            -------------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm> 
+            -------------------------------------------------------------------------------------- -- UXTB <Rd>,<Rm>    
+            when SXTH | SXTB | UXTH | UXTB => 
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
+                set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0';
                 mem_access <= false;             
-            -------------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm>    
-            when UXTH => 
-                WE_val <= '1'; 
+            -------------------------------------------------------------------------------------- -- SVC #<imm8>
+            when SVC => 
+                WE_val <= '0'; 
                 mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
+                set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0';
-                mem_access <= false;
-           -------------------------------------------------------------------------------------- -- UXTB <Rd>,<Rm>    
-            when UXTB => 
-                WE_val <= '1'; 
-                mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
-                overflow_status <= (others => '0');
-                update_PC <= '0';
-                mem_access <= false;         
+                mem_access <= true;     
+          
+           
+            
                 
                         
             when NOP =>
@@ -598,7 +588,10 @@ begin
             when UXTB =>       
                 alu_temp(31 downto 0) <= unsigned (x"0000_00" & operand_A(7 downto 0));                           
                 alu_temp(32) <= '0';        
-             
+            -------------------------------------------------------------------------------------- -- SVC #<imm8>
+            when SVC => 
+                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used  
+                 
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when NOP =>
                 alu_temp <= (others => '0');   
