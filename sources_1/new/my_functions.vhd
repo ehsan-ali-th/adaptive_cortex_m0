@@ -114,6 +114,15 @@ package helper_funcs is
         s_BLX_PC_UPDATED,
         s_BLX_Phase1,
         s_BLX_Phase2,
+        s_SVC_PUSH_R0,
+        s_SVC_PUSH_R1,
+        s_SVC_PUSH_R2,
+        s_SVC_PUSH_R3,
+        s_SVC_PUSH_R12,
+        s_SVC_PUSH_R14,
+        s_SVC_PUSH_RETURN_ADDR,
+        s_SVC_PUSH_xPSR,
+        s_SVC_FETCH_NEW_PC,
         s_SVC_PC_UPDATED
         );
 
@@ -160,7 +169,8 @@ package helper_funcs is
         sel_hardd_NC,
         sel_BX_Rm,
         sel_BLX_Rm,
-        sel_SVC_Mem_content
+        sel_SP_main_addr_SVC,
+        sel_SVC_mem_content
     );   
    
     type gp_data_in_ctrl_t is (
@@ -219,6 +229,17 @@ package helper_funcs is
         VT_PendSV,
         VT_SysTick,
         VT_NONE 
+   ); 
+   
+   type SDC_push_read_address_t is (
+        SDC_read_R0,
+        SDC_read_R1,
+        SDC_read_R2,
+        SDC_read_R3,
+        SDC_read_R12,
+        SDC_read_R14,
+        SDC_read_retuen_addr,
+        SDC_read_xPSR
    ); 
  
     type flag_t is record 
@@ -446,7 +467,7 @@ package body helper_funcs is
                 elsif (execution_cmd = BLX) then  
                     next_state := s_BLX_PC_UPDATED;    
                 elsif (execution_cmd = SVC) then  
-                    next_state := s_SVC_PC_UPDATED;                 
+                    next_state := s_SVC_PUSH_R0;                 
                 else
                     next_state := s_PC_UPDATED;
                 end if;  

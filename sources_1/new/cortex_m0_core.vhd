@@ -177,7 +177,8 @@ architecture Behavioral of cortex_m0_core is
             HWRITE : out std_logic;
             VT_ctrl : out VT_ctrl_t;
             branch_target_address : out std_logic_vector (31 downto 0);
-            branch_target_address_val : out std_logic_vector (31 downto 0)
+            branch_target_address_val : out std_logic_vector (31 downto 0);
+            SDC_push_read_address : out SDC_push_read_address_t
         );
     end component;
     
@@ -190,7 +191,8 @@ architecture Behavioral of cortex_m0_core is
             overflow_status : in std_logic_vector(2 downto 0);
             cmd: in executor_cmds_t;
             set_flags : in boolean; 
-            flags_o : out flag_t
+            flags_o : out flag_t;
+            xPSR : out std_logic_vector(31 downto 0)
             );
     end component;
     
@@ -261,6 +263,10 @@ architecture Behavioral of cortex_m0_core is
 	signal PC_after_execute_plus_4 : std_logic_vector (31 downto 0);
 	signal PC_after_execute_plus_2 : std_logic_vector (31 downto 0);
 	signal new_PC : std_logic_vector (31 downto 0);
+	signal SDC_gp_addrB : std_logic_vector (3 downto 0);
+	signal xPSR : std_logic_vector (31 downto 0);
+	signal hwdara_final : std_logic_vector (31 downto 0);
+	
 	
    
 	-- Registers after decoder
@@ -292,6 +298,7 @@ architecture Behavioral of cortex_m0_core is
     signal access_mem_value : boolean;
 	signal PC_updated : boolean;	
 	signal use_base_register : boolean;	
+	signal use_base_register_value : boolean;	
 	signal mem_load_size : mem_op_size_t;	
 	signal mem_load_size_value : mem_op_size_t;	
 	signal mem_load_sign_ext : boolean;
@@ -328,7 +335,8 @@ architecture Behavioral of cortex_m0_core is
     signal SP_main_init:  std_logic_vector (31 downto 0);
     signal PC_init:  std_logic_vector (31 downto 0);
     signal SVC_addr:  std_logic_vector (31 downto 0);
-    signal VT_ctrl: VT_ctrl_t;
+    signal VT_ctrl : VT_ctrl_t;
+    signal SDC_push_read_address : SDC_push_read_address_t;
    
     signal data_memory_addr_i : unsigned (31 downto 0);
     signal LDR_mul_result : unsigned (7 downto 0);
@@ -397,7 +405,7 @@ begin
                           LR_PC => LR_PC,
                   execution_cmd => command_value,
                      access_mem => access_mem_value,
-              use_base_register => use_base_register,
+              use_base_register => use_base_register_value,
                   mem_load_size => mem_load_size_value,
               mem_load_sign_ext => mem_load_sign_ext_value,
              LDM_STM_access_mem => LDM_STM_access_mem_value,
@@ -465,7 +473,8 @@ begin
                          HWRITE => HWRITE,
                         VT_ctrl => VT_ctrl,
           branch_target_address => branch_target_address,
-      branch_target_address_val => branch_target_address_value
+      branch_target_address_val => branch_target_address_value,
+          SDC_push_read_address => SDC_push_read_address
         ); 
         
      m0_core_flags: status_flags port map (
@@ -476,7 +485,8 @@ begin
                             cmd => cmd_out,
                       set_flags => set_flags,
                 overflow_status => overflow_status,
-                       flags_o  => flags
+                       flags_o  => flags,
+                           xPSR => xPSR
         );
         
      m0_count_ones: count_ones port map ( 
@@ -500,11 +510,11 @@ begin
     LDM_total_bytes_read <= std_logic_vector (shift_left(unsigned('0' & number_of_ones_initial), 2)); --   
     PC_plus_4 <= std_logic_vector ((unsigned (PC) + 4));
     
-    new_PC_p : process (result, command, gp_ram_dataA, SVC_addr) begin
-        if (command = BX or command = BLX) then
+    new_PC_p : process (result, command, gp_ram_dataA, SVC_addr, haddr_ctrl) begin
+        if (haddr_ctrl = sel_SVC_mem_content) then
+            new_PC <= SVC_addr; 
+        elsif (command = BX or command = BLX) then
             new_PC <= gp_ram_dataA;   
-        elsif (command = SVC) then
-            new_PC <= SVC_addr;        
         else
             new_PC <= result;
         end if;
@@ -551,14 +561,14 @@ begin
     --- Hardware which drives (Cortex-M0) module input/ouput pins
     ---------------------------------------------------------------------------------------    
     
-    HWDATA <= gp_ram_dataB;
+    HWDATA <= hwdara_final;
     
     HSIZE_p : process (mem_load_size) begin
         case (mem_load_size) is
             when WORD           =>  HSIZE <= "010";
             when HALF_WORD      =>  HSIZE <= "001";  
             when BYTE           =>  HSIZE <= "000";  
-            when others         =>   null;  
+            when others         =>  null;  
         end case; 
     end process;  
     
@@ -574,16 +584,23 @@ begin
             when       VT_NONE =>  VT_addr <= x"0000_0000";
             when others        =>   null;  
         end case; 
-    end process;    
-        
+    end process;  
+      
+    hwdara_final_p : process (SDC_push_read_address, PC_execute, xPSR, gp_ram_dataB) begin
+         case (SDC_push_read_address) is
+            when SDC_read_retuen_addr     => hwdara_final <= PC_execute;
+            when SDC_read_xPSR            => hwdara_final <= xPSR;
+            when others                   => hwdara_final <= gp_ram_dataB;
+        end case;
+    end process;     
   
     
     HADDR_p : process ( LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, 
                         PC(31 downto 2), LDM_STM_mem_addr, VT_addr, PUSH_mem_addr, POP_mem_addr, 
-                        command_value, branch_target_address_value, new_PC) begin
-        if (command_value = SVC) then        
-            HADDR <= x"0000_002C";      -- SVC exception no. = 11 * 4 = 44 = 0x2C 
-        else                
+                        branch_target_address_value, new_PC, SVC_addr) begin
+--        if (command_value = SVC) then        
+--            HADDR <= x"0000_002C";      -- SVC exception no. = 11 * 4 = 44 = 0x2C 
+--        else                
             case (haddr_ctrl) is
                 when              sel_PC         =>  HADDR <= PC(31 downto 2) & B"00";  
                 when            sel_DATA         =>  HADDR <= data_memory_addr;
@@ -597,10 +614,11 @@ begin
                 when          sel_BRANCH         =>  HADDR <= std_logic_vector (branch_target_address_value);
                 when           sel_BX_Rm         =>  HADDR <= new_PC;
                 when          sel_BLX_Rm         =>  HADDR <= new_PC;
-                when        sel_SVC_Mem_content  =>  HADDR <= new_PC;
+                when    sel_SP_main_addr_SVC     =>  HADDR <= std_logic_vector (PUSH_mem_addr);
+                when    sel_SVC_mem_content      =>  HADDR <= SVC_addr;
                 when        others               =>  null;
             end case;
-        end if;
+--        end if;
     end process;   
    
     LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
@@ -646,6 +664,19 @@ begin
     --- Hardware which drives (Register) module input pins
     ---------------------------------------------------------------------------------------
     
+    SDC_gp_addrB_p : process (SDC_push_read_address) begin
+        case (SDC_push_read_address) is
+            when SDC_read_R0            => SDC_gp_addrB <= B"0000";
+            when SDC_read_R1            => SDC_gp_addrB <= B"0001";
+            when SDC_read_R2            => SDC_gp_addrB <= B"0010";
+            when SDC_read_R3            => SDC_gp_addrB <= B"0011";
+            when SDC_read_R12           => SDC_gp_addrB <= B"1100";
+            when SDC_read_R14           => SDC_gp_addrB <= B"1110";
+            when SDC_read_retuen_addr   => SDC_gp_addrB <= B"0000";
+            when SDC_read_xPSR          => SDC_gp_addrB <= B"0000";
+            when others                 => SDC_gp_addrB <= B"0000";
+        end case;
+    end process;
     
     gp_WR_addr_non_xxM_p: process (haddr_ctrl, gp_WR_addr) begin
         if (haddr_ctrl = sel_BLX_Rm) then
@@ -688,9 +719,11 @@ begin
         end case;
     end process;
     
-    gp_addrB_final_p: process (haddr_ctrl, use_base_register, gp_addrB_value, gp_addrB, LDM_W_STM_R_reg) begin
+    gp_addrB_final_p: process (haddr_ctrl, use_base_register, gp_addrB_value, gp_addrB, LDM_W_STM_R_reg, SDC_gp_addrB) begin
         if (haddr_ctrl = sel_STM or haddr_ctrl = sel_SP_main_addr) then
             gp_addrB_final <= LDM_W_STM_R_reg;   
+        elsif (haddr_ctrl = sel_SP_main_addr_SVC) then    
+            gp_addrB_final <= SDC_gp_addrB; 
         else
             if (use_base_register = true) then 
                  gp_addrB_final <= gp_addrB_value;  
@@ -940,6 +973,8 @@ begin
         end if;   
     end process;
     
+    -- TODO check to see if inserting a flip flip before use_base_register and adding use_base_register_value 
+    --      breaks LDM and STM or not. 
     data_memory_addr_value_p: process (command_value, gp_ram_dataA, PC_execute, base_reg_content, 
                                        LDR_mul_result_value, use_base_register) begin
         if (use_base_register = true) then 
@@ -980,6 +1015,7 @@ begin
             LDR_mul_result <= (others => '0');
             mem_load_sign_ext <= false;
             LDM_STM_access_mem <= false;
+            use_base_register <= false;
         else
             if (rising_edge(HCLK)) then
                     imm8_z_ext <= imm8_z_ext_value;
@@ -993,6 +1029,7 @@ begin
                     LDR_mul_result <= LDR_mul_result_value;
                     mem_load_sign_ext <= mem_load_sign_ext_value;
                     LDM_STM_access_mem <= LDM_STM_access_mem_value;
+                    use_base_register <= use_base_register_value;
                 if (disable_fetch = false) then
                     access_mem <= access_mem_value;
                     hrdata_data <= hrdata_data_value; 

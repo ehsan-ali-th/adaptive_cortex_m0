@@ -78,7 +78,8 @@ entity core_state is
         HWRITE : out std_logic;
         VT_ctrl : out VT_ctrl_t;
         branch_target_address : out std_logic_vector (31 downto 0);
-        branch_target_address_val : out std_logic_vector (31 downto 0)
+        branch_target_address_val : out std_logic_vector (31 downto 0);
+        SDC_push_read_address : out SDC_push_read_address_t
     );
 end core_state;
     
@@ -192,8 +193,10 @@ begin
     
     
     branch_target_address_value_p: process (execution_cmd, execution_cmd_value, PC_execute, PC_after_execute, imm8_sign_ext, 
-                                            imm11_sign_ext, BL_target_address_value_sign_ext, new_PC) begin
-        if (execution_cmd = BRANCH) then
+                                            imm11_sign_ext, BL_target_address_value_sign_ext, new_PC, m0_core_state) begin
+        if (m0_core_state = s_SVC_PC_UPDATED) then
+            branch_target_address_value <= signed (new_PC);     -- SVC exception no. = 11 * 4 = 44 = 0x2C                                        
+        elsif (execution_cmd = BRANCH) then
             branch_target_address_value <= 
                 signed(PC_after_execute) + (shift_left (signed (imm8_sign_ext), 1) + 4);
         elsif (execution_cmd = BRANCH_imm11) then
@@ -206,8 +209,6 @@ begin
             branch_target_address_value <= signed (new_PC);     -- Rm
         elsif (execution_cmd = BLX) then
             branch_target_address_value <= signed (new_PC);     -- Rm             
-        elsif (execution_cmd = SVC) then                        -- new_PC = content of 0x2C location        
-            branch_target_address_value <= signed (new_PC);     -- SVC exception no. = 11 * 4 = 44 = 0x2C    
         else
             branch_target_address_value <=  x"0000_0000"; 
         end if;        
@@ -366,7 +367,15 @@ begin
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 or
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 or 
                     m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 or
-                    m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_LR ) then
+                    m0_core_next_state = s_DATA_REG_ACCESS_EXECUTE_PUSH_LR or 
+                    m0_core_next_state = s_SVC_PUSH_R0 or
+                    m0_core_next_state = s_SVC_PUSH_R1 or
+                    m0_core_next_state = s_SVC_PUSH_R2 or
+                    m0_core_next_state = s_SVC_PUSH_R3 or
+                    m0_core_next_state = s_SVC_PUSH_R12 or
+                    m0_core_next_state = s_SVC_PUSH_R14 or
+                    m0_core_next_state = s_SVC_PUSH_RETURN_ADDR or
+                    m0_core_next_state = s_SVC_PUSH_xPSR) then
                 SP_main_value <= std_logic_vector (unsigned(SP_main) - 4);
            elsif (  m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R0 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R1 or
@@ -1017,6 +1026,24 @@ begin
                 m0_core_next_state <= s_BLX_Phase2;
             when s_BLX_Phase2 =>
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
+            when s_SVC_PUSH_R0 =>
+                m0_core_next_state <= s_SVC_PUSH_R1;
+            when s_SVC_PUSH_R1 =>
+                m0_core_next_state <= s_SVC_PUSH_R2;
+            when s_SVC_PUSH_R2 =>
+                m0_core_next_state <= s_SVC_PUSH_R3;
+            when s_SVC_PUSH_R3 =>
+                m0_core_next_state <= s_SVC_PUSH_R12;
+            when s_SVC_PUSH_R12 =>
+                m0_core_next_state <= s_SVC_PUSH_R14;
+            when s_SVC_PUSH_R14 =>
+                m0_core_next_state <= s_SVC_PUSH_RETURN_ADDR;
+            when s_SVC_PUSH_RETURN_ADDR =>
+                m0_core_next_state <= s_SVC_PUSH_xPSR;
+            when s_SVC_PUSH_xPSR =>
+                m0_core_next_state <= s_SVC_FETCH_NEW_PC;
+            when s_SVC_FETCH_NEW_PC =>
+                m0_core_next_state <= s_SVC_PC_UPDATED;           
             when s_SVC_PC_UPDATED =>
                 m0_core_next_state <= s_BRANCH_Phase1;   
                                                                                                                                        
@@ -1040,6 +1067,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_SET_SP => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_SP_main_init; 
@@ -1052,6 +1080,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0';     
                 VT_ctrl <= VT_SP_main;
+                SDC_push_read_address <= SDC_read_R0;
             when s_FETCH_PC => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1064,6 +1093,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0';     
                 VT_ctrl <= VT_RESET;
+                SDC_push_read_address <= SDC_read_R0;
             when s_SET_PC => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_PC_init; 
@@ -1076,6 +1106,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0';     
                 VT_ctrl <= VT_RESET;
+                SDC_push_read_address <= SDC_read_R0;
             when s_PRE1_RUN =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1088,6 +1119,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_PRE2_RUN =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1100,6 +1132,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_RUN =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1112,6 +1145,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
              when s_DATA_MEM_ACCESS_R =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1138,6 +1172,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_EXECUTE_DATA_MEM_R =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_HRDATA_VALUE_SIZED; 
@@ -1150,6 +1185,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
              when s_DATA_MEM_ACCESS_W =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1166,6 +1202,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_EXECUTE_DATA_MEM_W =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_HRDATA_VALUE_SIZED; 
@@ -1178,6 +1215,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_PC_UPDATED =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1190,6 +1228,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_PIPELINE_FLUSH1 =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1202,6 +1241,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_PIPELINE_FLUSH2 =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1214,6 +1254,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_PIPELINE_FLUSH3 =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1226,6 +1267,7 @@ begin
                 LDM_STM_capture_base <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_LDM =>
                 LDM_STM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
@@ -1260,6 +1302,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
                 LDM_cur_target_reg <= REG_R0;   
                 LDM_STM_capture_base <= false; 
@@ -1286,6 +1329,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
                 LDM_STM_capture_base <= false; 
@@ -1312,6 +1356,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
                 LDM_STM_capture_base <= false; 
@@ -1338,6 +1383,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
                 LDM_STM_capture_base <= false; 
@@ -1364,6 +1410,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
                 LDM_STM_capture_base <= false; 
@@ -1390,6 +1437,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
                 LDM_STM_capture_base <= false; 
@@ -1416,6 +1464,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
                 LDM_STM_capture_base <= false; 
@@ -1442,6 +1491,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
                 LDM_STM_capture_base <= false; 
@@ -1468,6 +1518,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_FINISH_STM =>
                 -- In this state we need to write the total number of bytes written into memory to register bank
                 LDM_STM_capture_base <= false; 
@@ -1487,6 +1538,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R0 =>  
                LDM_cur_target_reg <= REG_R0;
                LDM_STM_capture_base <= true;
@@ -1524,6 +1576,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R1 =>  
                 LDM_cur_target_reg <= REG_R1;
                 LDM_STM_capture_base <= true; 
@@ -1561,6 +1614,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R2 =>  
                 LDM_cur_target_reg <= REG_R2;
                 LDM_STM_capture_base <= true; 
@@ -1598,6 +1652,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R3 =>            
                 LDM_cur_target_reg <= REG_R3;
                 LDM_STM_capture_base <= true; 
@@ -1635,6 +1690,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R4 =>  
                 LDM_cur_target_reg <= REG_R4;
                 LDM_STM_capture_base <= true; 
@@ -1672,6 +1728,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R5 =>  
                 LDM_cur_target_reg <= REG_R5;
                 LDM_STM_capture_base <= true; 
@@ -1709,6 +1766,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R6 =>  
                 LDM_cur_target_reg <= REG_R6;
                 LDM_STM_capture_base <= true; 
@@ -1746,6 +1804,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R7 =>  
                 LDM_cur_target_reg <= REG_R7;
                 LDM_STM_capture_base <= true; 
@@ -1783,6 +1842,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_FINISH_PUSH =>
                 -- In this state we need to write the total number of bytes written into memory to register bank
                 LDM_STM_capture_base <= false; 
@@ -1802,6 +1862,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R0 =>  
                 LDM_cur_target_reg <= REG_R0;   
                 LDM_STM_capture_base <= true;
@@ -1839,6 +1900,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
                 LDM_STM_capture_base <= true; 
@@ -1876,6 +1938,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
                 LDM_STM_capture_base <= true; 
@@ -1913,6 +1976,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
                 LDM_STM_capture_base <= true; 
@@ -1950,6 +2014,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
                 LDM_STM_capture_base <= true; 
@@ -1987,6 +2052,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
                 LDM_STM_capture_base <= true; 
@@ -2024,6 +2090,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
                 LDM_STM_capture_base <= true; 
@@ -2061,6 +2128,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
                 LDM_STM_capture_base <= true; 
@@ -2098,6 +2166,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_LR =>  
                 LDM_cur_target_reg <= REG_LR;  
                 LDM_STM_capture_base <= true; 
@@ -2135,6 +2204,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
              when s_DATA_MEM_ACCESS_POP =>
                 LDM_STM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
@@ -2168,6 +2238,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;    
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R0 =>  
                 LDM_cur_target_reg <= REG_R0;   
                 LDM_STM_capture_base <= false; 
@@ -2192,6 +2263,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
                 LDM_STM_capture_base <= false; 
@@ -2216,6 +2288,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
                 LDM_STM_capture_base <= false; 
@@ -2240,6 +2313,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
                 LDM_STM_capture_base <= false; 
@@ -2264,6 +2338,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
                 LDM_STM_capture_base <= false; 
@@ -2288,6 +2363,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
                 LDM_STM_capture_base <= false; 
@@ -2312,6 +2388,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
                 LDM_STM_capture_base <= false; 
@@ -2336,6 +2413,7 @@ begin
                 gp_addrA_executor_ctrl <= false; 
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
                 LDM_STM_capture_base <= false; 
@@ -2360,6 +2438,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
              when s_DATA_MEM_ACCESS_EXECUTE_POP_PC =>  
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2386,6 +2465,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;     
+                SDC_push_read_address <= SDC_read_R0;
            when s_BRANCH_PC_UPDATED =>     
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2398,6 +2478,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;     
+                SDC_push_read_address <= SDC_read_R0;
              when s_BRANCH_UNCOND_PC_UPDATED =>     
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2411,6 +2492,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_BX_PC_UPDATED =>     
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2424,6 +2506,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;                            
+                SDC_push_read_address <= SDC_read_R0;
             when s_BRANCH_Phase1 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2437,6 +2520,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_BRANCH_Phase2 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2449,6 +2533,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;            
+                SDC_push_read_address <= SDC_read_R0;
             when s_BL =>                            
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_LR_DATA_BL;  
@@ -2461,6 +2546,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_BLX_PC_UPDATED =>                            
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_LR_DATA_BLX;  
@@ -2473,6 +2559,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_BLX_Phase1 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2486,6 +2573,7 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
             when s_BLX_Phase2 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2497,19 +2585,138 @@ begin
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
-                VT_ctrl <= VT_NONE;    
-            when s_SVC_PC_UPDATED =>    
+                VT_ctrl <= VT_NONE;   
+                SDC_push_read_address <= SDC_read_R0;
+            when s_SVC_PUSH_R0 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
-                refetch_i <= any_access_mem; 
-                disable_fetch <= any_access_mem;
-                haddr_ctrl <= sel_SVC_Mem_content;
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_R0;
+            when s_SVC_PUSH_R1 =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_R1;
+            when s_SVC_PUSH_R2 =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_R2;
+            when s_SVC_PUSH_R3 =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_R3;
+            when s_SVC_PUSH_R12 =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_R12;
+            when s_SVC_PUSH_R14 =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_R14;
+             when s_SVC_PUSH_RETURN_ADDR =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_retuen_addr;
+            when s_SVC_PUSH_xPSR =>
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SP_main_addr_SVC;
+                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '1'; 
+                VT_ctrl <= VT_NONE;       
+                SDC_push_read_address <= SDC_read_xPSR;              
+            when s_SVC_FETCH_NEW_PC =>    
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_VECTOR_TABLE;
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_SVC;  
                 disable_executor <= true; 
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '0'; 
-                VT_ctrl <= VT_NONE;    
+                VT_ctrl <= VT_SVCall;    
+                SDC_push_read_address <= SDC_read_R0; 
+            when s_SVC_PC_UPDATED =>    
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= true; 
+                disable_fetch <= true;
+                haddr_ctrl <= sel_SVC_mem_content;
+                gp_data_in_ctrl <= sel_ALU_RESULT; 
+                hrdata_ctrl <= sel_SVC;  
+                disable_executor <= true; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_SVCall;    
+                SDC_push_read_address <= SDC_read_R0;
                 
                 
            
@@ -2525,6 +2732,7 @@ begin
                 LDM_cur_target_reg <= REG_NONE;
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
         end case;
     end process;       
  end Behavioral;

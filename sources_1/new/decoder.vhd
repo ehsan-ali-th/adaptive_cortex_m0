@@ -949,14 +949,14 @@ begin
             ----------------------------------------------------------------------------------- -- SVC #<imm8>
             elsif (std_match(opcode, "110111") and instruction(9 downto 8) = B"11")  then       
                 gp_WR_addr <= B"0000";
-                gp_addrA <=  B"0000";               
-                gp_addrB <= B"0000";   
+                gp_addrA <=  B"0000";                                   -- Will not be used '0'              
+                gp_addrB <= B"0000";                                    -- Read register R0  
                 gp_addrC <=  B"0000";                                   -- Will not be used '0' 
                 imm8 <= instruction (7 downto 0);                       -- imm8 
                 execution_cmd <= SVC;
                 destination_is_PC <= true;  
                 access_mem <= false;    
-                use_base_register <= false;   
+                use_base_register <= true;   
                 mem_load_size <= WORD;
                 mem_load_sign_ext <= false;   
                 LDM_STM_access_mem <= false;     

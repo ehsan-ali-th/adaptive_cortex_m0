@@ -43,19 +43,20 @@ entity status_flags is
         overflow_status : in std_logic_vector(2 downto 0);      -- Concatenation of 3 bits: operand_A(31) & imm8_z_ext(31) & alu_result(31);
         cmd : in executor_cmds_t;
         set_flags : in boolean; 
-        flags_o : out flag_t
+        flags_o : out flag_t;
+        xPSR : out std_logic_vector(31 downto 0)
     );
 end status_flags;
 
 architecture Behavioral of status_flags is
-    signal status_flags : bit_vector(31 downto 0) := (others=>'0');
+    signal status_flags_internal : bit_vector(31 downto 0) := (others=>'0');
         
-    alias N : bit is status_flags(31);
-    alias Z : bit is status_flags(30);
-    alias C : bit is status_flags(29);
-    alias V : bit is status_flags(28);
-    alias EN : bit_vector is status_flags(5 downto 0);
-    alias T : bit is status_flags(24);
+    alias N : bit is status_flags_internal(31);
+    alias Z : bit is status_flags_internal(30);
+    alias C : bit is status_flags_internal(29);
+    alias V : bit is status_flags_internal(28);
+    alias EN : bit_vector is status_flags_internal(5 downto 0);
+    alias T : bit is status_flags_internal(24);
 
 begin
 
@@ -148,7 +149,7 @@ begin
                  end case;
               end if; -- set_flags
          else
-            status_flags <= (others => '0');
+            status_flags_internal <= (others => '0');
          end if;      
         
     end process cmd_p;
@@ -159,5 +160,12 @@ begin
     flags_o.V <= V;
     flags_o.EN <= EN;
     flags_o.T <= T;
-
+    
+    -- convert bit_vector to std_logic_vector
+    assign_status_flags_to_xPSR: process (status_flags_internal) begin
+	    for I in 0 to 31 loop
+			xPSR(I) <= to_std_logic(status_flags_internal (I));
+    	end loop;
+    end process;
+    
 end Behavioral;
