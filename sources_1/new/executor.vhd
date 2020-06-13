@@ -302,7 +302,18 @@ begin
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0';
-                mem_access <= false;             
+                mem_access <= false;   
+            -------------------------------------------------------------------------------------- -- REV <Rd>,<Rm>
+            -------------------------------------------------------------------------------------- -- REV16 <Rd>,<Rm>
+            -------------------------------------------------------------------------------------- -- REVSH <Rd>,<Rm>
+            when REV | REV16 | REVSH =>
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                overflow_status <= (others => '0');
+                update_PC <= '0';
+                mem_access <= false;   
+                          
             -------------------------------------------------------------------------------------- -- SVC #<imm8>
             when SVC => 
                 WE_val <= '0'; 
@@ -588,6 +599,29 @@ begin
             when UXTB =>       
                 alu_temp(31 downto 0) <= unsigned (x"0000_00" & operand_A(7 downto 0));                           
                 alu_temp(32) <= '0';        
+            -------------------------------------------------------------------------------------- -- REV <Rd>,<Rm>
+            when REV =>       
+                alu_temp(31 downto 24) <= unsigned (operand_A (7 downto 0));                           
+                alu_temp(23 downto 16) <= unsigned (operand_A (15 downto 8));                           
+                alu_temp(15 downto 8)  <= unsigned (operand_A (23 downto 16));                           
+                alu_temp(7 downto 0)   <= unsigned (operand_A (31 downto 24));                           
+                alu_temp(32) <= '0';        
+            -------------------------------------------------------------------------------------- -- REV16 <Rd>,<Rm>
+             when REV16 =>       
+                alu_temp(31 downto 24) <= unsigned (operand_A (23 downto 16));                           
+                alu_temp(23 downto 16) <= unsigned (operand_A (31 downto 24));                           
+                alu_temp(15 downto 8)  <= unsigned (operand_A (7 downto 0));                           
+                alu_temp(7 downto 0)   <= unsigned (operand_A (15 downto 8));                           
+                alu_temp(32) <= '0';   
+             -------------------------------------------------------------------------------------- -- REVSH <Rd>,<Rm>
+             when REVSH =>       
+                if (operand_A(7) = '1') then
+                    alu_temp(31 downto 8) <= unsigned (x"FFFF" & operand_A (7 downto 0));   
+                else
+                    alu_temp(31 downto 8) <= unsigned (x"0000" & operand_A (7 downto 0));
+                end if;                            
+                alu_temp(7 downto 0)   <= unsigned (operand_A (15 downto 8));                           
+                alu_temp(32) <= '0';      
             -------------------------------------------------------------------------------------- -- SVC #<imm8>
             when SVC => 
                  alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used  

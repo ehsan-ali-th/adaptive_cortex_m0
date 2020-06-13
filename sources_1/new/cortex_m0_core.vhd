@@ -1437,7 +1437,22 @@ begin
            elsif std_match(current_instruction_final(15 downto 6), "1011001001") then    
                 Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
                 Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
-                cortex_m0_opcode <= "SXTB" & " " & Rd_decode & ", " & Rm_decode & "      ";       
+                cortex_m0_opcode <= "SXTB" & " " & Rd_decode & ", " & Rm_decode & "      ";  
+          ------------------------------------------------------------------------------------- -- REV <Rd>,<Rm> 
+           elsif std_match(current_instruction_final(15 downto 6), "1011101000") then    
+                Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
+                cortex_m0_opcode <= "REV " & " " & Rd_decode & ", " & Rm_decode & "      ";             
+          ------------------------------------------------------------------------------------- -- REV16 <Rd>,<Rm> 
+           elsif std_match(current_instruction_final(15 downto 6), "1011101001") then    
+                Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
+                cortex_m0_opcode <= "REV16 " & " " & Rd_decode & ", " & Rm_decode & "    ";             
+          ------------------------------------------------------------------------------------- -- REVSH <Rd>,<Rm> 
+           elsif std_match(current_instruction_final(15 downto 6), "1011101011") then    
+                Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
+                Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
+                cortex_m0_opcode <= "REVSH " & " " & Rd_decode & ", " & Rm_decode & "    ";             
           
            end if;
         end if;

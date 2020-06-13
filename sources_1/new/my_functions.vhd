@@ -143,6 +143,7 @@ package helper_funcs is
         PUSH, POP,
         BRANCH, BRANCH_imm11, BL, BL2, BX, BLX,
         SXTH, SXTB, UXTH, UXTB,
+        REV,  REV16, REVSH,
         SVC,
         NOP,
         NOT_DEF
