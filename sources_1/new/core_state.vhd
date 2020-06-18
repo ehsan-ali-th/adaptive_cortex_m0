@@ -38,7 +38,6 @@ entity core_state is
     Port (
         clk : in std_logic;
         reset : in std_logic;
-        instruction_size : in boolean;      -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
         access_mem : in boolean;
         PC_updated : in boolean;
         cond : in std_logic_vector (3 downto 0);
@@ -57,10 +56,19 @@ entity core_state is
         PC_init : in std_logic_vector (31 downto 0);
         pos_A_is_multi_cycle : in boolean;
         ldm_hrdata_value : in std_logic_vector(31 downto 0);	
-        hrdata_program : in std_logic_vector(31 downto 0);
---        branch_target_address_value : in std_logic_vector(31 downto 0);	
+        inst32_detected_value : in boolean;
+        current_instruction_32bit_HI : in std_logic_vector (15 downto 0);
+        current_instruction : in std_logic_vector (15 downto 0);
+        msr_update_MSP : in boolean;
+        msr_update_PSP : in boolean;
+        msr_update_PRIMASK : in boolean;
+        msr_update_CONTROL : in boolean;
+        new_PRIMASK : std_logic_vector (0 downto 0);
+        new_CONTROL : std_logic_vector (1 downto 0);
+        new_SP : in std_logic_vector (31 downto 0);
         PC : out std_logic_vector (31 downto 0);
         SP_main : out std_logic_vector (31 downto 0);
+        SP_process : out std_logic_vector (31 downto 0);
         PC_decode : out std_logic_vector (31 downto 0);
         PC_execute :  out std_logic_vector (31 downto 0);
         PC_after_execute :  out std_logic_vector (31 downto 0);
@@ -79,17 +87,26 @@ entity core_state is
         VT_ctrl : out VT_ctrl_t;
         branch_target_address : out std_logic_vector (31 downto 0);
         branch_target_address_val : out std_logic_vector (31 downto 0);
-        SDC_push_read_address : out SDC_push_read_address_t
+        SDC_push_read_address : out SDC_push_read_address_t;
+        inst32_detected : out boolean;
+        Rn : out std_logic_vector (31 downto 28);
+        PRIMASK : out std_logic_vector (0 downto 0);
+        CONTROL : out std_logic_vector (1 downto 0)                     -- nPRIV, bit[0]
+                                                                        --      0: Thread mode has privileged access.
+                                                                        --      1: Thread mode has unprivileged access.
+                                                                        -- SPSEL, bit[1]
+                                                                        --      0: Use SP_main as the current stack.
+                                                                        --      1: In Thread mode, use SP_process as the current stack.
     );
 end core_state;
     
 architecture Behavioral of core_state is
 
-    signal m0_core_state :  core_state_t;
-    signal m0_core_next_state :  core_state_t;
-    signal size_of_executed_instruction : unsigned (31 downto 0);
-    signal PC_value :  unsigned(31 downto 0);
-    signal SP_main_value :  std_logic_vector(31 downto 0);
+    signal m0_core_state : core_state_t;
+    signal m0_core_next_state : core_state_t;
+    signal PC_value : unsigned(31 downto 0);
+    signal SP_main_value : std_logic_vector(31 downto 0);
+    signal SP_process_value : std_logic_vector(31 downto 0);
 	signal refetch_i : boolean;
     signal LDM_counter : unsigned (3 downto 0);             -- Starts with the total number of target registers 
     signal LDM_counter_value : unsigned (3 downto 0);      
@@ -103,8 +120,6 @@ architecture Behavioral of core_state is
     signal cond_satisfied : boolean;
     signal cond_satisfied_value : boolean;
     signal branch_target_address_value : signed (31 downto 0);
-    signal BL_target_address_HI : std_logic_vector (10 downto 0);
-    signal BL_target_address_LO : std_logic_vector (15 downto 0);
     signal BL_target_address_value : std_logic_vector (24 downto 0);        -- 25 bits:  S:I1:I2:imm10:imm11:'0'
     signal BL_target_address_value_sign_ext : std_logic_vector (31 downto 0);        
     signal imm11 : std_logic_vector(10 downto 0);
@@ -114,6 +129,10 @@ architecture Behavioral of core_state is
     signal BL_I2 : std_logic;
     signal update_target_branch_triggered : boolean;
     signal execution_cmd : executor_cmds_t;
+    signal inst32_tempor : boolean;
+    signal PRIMASK_value : std_logic_vector(0 downto 0);
+    signal CONTROL_value : std_logic_vector(1 downto 0);
+                                                                        
     
     component sign_ext is
         generic(
@@ -124,12 +143,12 @@ architecture Behavioral of core_state is
             ret:        out std_logic_vector(31 downto 0)
         );
     end component;
-    
-    alias BL_S: std_logic is BL_target_address_HI (10);  
-    alias BL_J1: std_logic is BL_target_address_LO (13);  
-    alias BL_J2: std_logic is BL_target_address_LO (11);
-    alias BL_imm10: std_logic_vector (9 downto 0) is BL_target_address_HI (9 downto 0);    
-    alias BL_imm11: std_logic_vector (10 downto 0) is BL_target_address_LO (10 downto 0); 
+
+    alias BL_S: std_logic is current_instruction_32bit_HI (10); 
+    alias BL_imm10: std_logic_vector (9 downto 0) is current_instruction_32bit_HI (9 downto 0); 
+    alias BL_J1: std_logic is current_instruction (13);  
+    alias BL_J2: std_logic is current_instruction (11);
+    alias BL_imm11: std_logic_vector (10 downto 0) is current_instruction (10 downto 0); 
     
 begin
 
@@ -140,7 +159,12 @@ begin
     imm11 <= imm11_10_downto_8 & imm8;
     
     branch_target_address_val <= std_logic_vector (branch_target_address_value);
-    
+
+
+   
+  
+   
+   
     BL_I1 <= not (BL_J1 xor BL_S);        -- I1 = NOT(J1 EOR S);
     BL_I2 <= not (BL_J2 xor BL_S);        -- I2 = NOT(J2 EOR S);
      
@@ -159,32 +183,8 @@ begin
         ret => BL_target_address_value_sign_ext
     );
     
-    BL_target_address_HI_p: process (execution_cmd_value, imm11_value_10_downto_8, imm8_value) begin
-        if (execution_cmd_value = BL) then
-            BL_target_address_HI <=  imm11_value_10_downto_8 & imm8_value;  
-        else
-            BL_target_address_HI <= (others => '0');
-        end if;      
-    end process;
-    
-    BL_target_address_LO_p: process (execution_cmd_value, PC_execute(1), hrdata_program) begin
---        if (execution_cmd_value = BL) then
-            if (PC_execute(1) = '1') then 
-                -- the BL instruction is at pos A
-                BL_target_address_LO <= hrdata_program (15 downto 0);  
-            else
-                -- the BL instruction is at pos B
-                BL_target_address_LO <= hrdata_program (31 downto 16);  
-            end if;    
---        else
---            BL_target_address_LO <= (others => '0');
---        end if;      
-    end process;
-    
-    
-    
-     BL_target_address_value_p: process (m0_core_state, BL_S, BL_I1, BL_I2, BL_imm10, BL_imm11) begin
-        if (m0_core_state = s_BL)                                                                                                             then
+   BL_target_address_value_p: process (execution_cmd_value, BL_S, BL_I1, BL_I2, BL_imm10, BL_imm11) begin
+        if (execution_cmd_value = BL)                                                                                                             then
             BL_target_address_value <= BL_S & BL_I1 & BL_I2 & BL_imm10 & BL_imm11 & '0';      -- S:I1:I2:imm10:imm11:'0'
         else
             BL_target_address_value <= (others => '0');
@@ -194,7 +194,10 @@ begin
     
     branch_target_address_value_p: process (execution_cmd, execution_cmd_value, PC_execute, PC_after_execute, imm8_sign_ext, 
                                             imm11_sign_ext, BL_target_address_value_sign_ext, new_PC, m0_core_state) begin
-        if (m0_core_state = s_SVC_PC_UPDATED) then
+        if (execution_cmd_value = BL) then
+            branch_target_address_value <= 
+                signed(PC_after_execute) + (signed (BL_target_address_value_sign_ext) + 4);
+        elsif (m0_core_state = s_SVC_PC_UPDATED) then
             branch_target_address_value <= signed (new_PC);     -- SVC exception no. = 11 * 4 = 44 = 0x2C                                        
         elsif (execution_cmd = BRANCH) then
             branch_target_address_value <= 
@@ -202,9 +205,6 @@ begin
         elsif (execution_cmd = BRANCH_imm11) then
             branch_target_address_value <= 
                 signed(PC_after_execute) + (shift_left (signed (imm11_sign_ext), 1) + 4);
-        elsif (execution_cmd = BL) then
-            branch_target_address_value <= 
-                signed(PC_after_execute) + (signed (BL_target_address_value_sign_ext) + 4);
         elsif (execution_cmd = BX) then
             branch_target_address_value <= signed (new_PC);     -- Rm
         elsif (execution_cmd = BLX) then
@@ -213,10 +213,8 @@ begin
             branch_target_address_value <=  x"0000_0000"; 
         end if;        
     end process;     
-    
-    
 
-    check_branch_cond_p: process (cond, current_flags) begin
+   check_branch_cond_p: process (cond, current_flags) begin
         case (cond) is
             when EQ => if (current_flags.Z = '1') then cond_satisfied_value <= true; else cond_satisfied_value <= false; end if;
             when NE => if (current_flags.Z = '0') then cond_satisfied_value <= true; else cond_satisfied_value <= false; end if;
@@ -268,32 +266,47 @@ begin
         if (reset = '1') then
             PC <= x"0000_0000";
             SP_main <= x"0000_0000";
+            SP_process <= x"0000_0000";
             PC_decode <= x"0000_0000";
             PC_execute  <= x"0000_0000"; 
             PC_after_execute  <= x"0000_0000"; 
             cond_satisfied <= false;
             branch_target_address <= x"0000_0000";
             execution_cmd <= NOT_DEF;
---            update_target_branch_triggered <= false;
+            inst32_detected <= false;
+            Rn <= B"0000";
+            PRIMASK <= B"0";
+            CONTROL(0) <= mode_privileged;           -- nPRIV
+            CONTROL(1) <= SP_mode_main;              -- SPSEL
+           
         else    
             if (rising_edge(clk)) then
                 cond_satisfied <= cond_satisfied_value;
                 execution_cmd <= execution_cmd_value;
---                if (update_target_branch_triggered = false) then
-                    if (execution_cmd = BRANCH or execution_cmd = BRANCH_imm11) then        -- BRANCH_imm11 covers BL and unconditional branch
-                        branch_target_address <= std_logic_vector (branch_target_address_value);
---                        update_target_branch_triggered <= true;
-                    elsif (m0_core_state = s_BL or m0_core_state = s_BRANCH_Phase1) then
-                        branch_target_address <= std_logic_vector (branch_target_address_value);    
-                 
---                        update_target_branch_triggered <= true;
-                    end if;  
-                      
---                else
---                    update_target_branch_triggered <= false;
---                end if;    
+                inst32_detected <= inst32_detected_value;
                 SP_main <= SP_main_value;
-                if (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then    
+                SP_process <= SP_process_value;
+                PRIMASK <= PRIMASK_value;
+                CONTROL <= CONTROL_value; 
+                if (m0_core_next_state = s_INST32_DETECTED) then
+                    Rn <= current_instruction(3 downto 0);
+                end if;    
+                if (execution_cmd = BRANCH or execution_cmd = BRANCH_imm11) then        -- BRANCH_imm11 covers BL and unconditional branch
+                    branch_target_address <= std_logic_vector (branch_target_address_value);
+                elsif (execution_cmd_value = BL) then
+                    branch_target_address <= std_logic_vector (branch_target_address_value);    
+                end if;  
+                if (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
+                    PC <=  std_logic_vector (unsigned (branch_target_address) + 2); 
+                    PC_decode <= std_logic_vector (branch_target_address);
+                    PC_execute <= PC_decode;
+                    PC_after_execute <= PC_execute;   
+--                elsif (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
+--                    PC <=  std_logic_vector (unsigned (branch_target_address) + 2); 
+--                    PC_decode <= std_logic_vector (branch_target_address);
+--                    PC_execute <= PC_decode;
+--                    PC_after_execute <= PC_execute;     
+                elsif (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then    
                     PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
                     PC_decode <= std_logic_vector (branch_target_address_value);
                     PC_execute <= PC_decode;
@@ -337,23 +350,18 @@ begin
         end if;
     end process;
     
-    PC_value_p : process (size_of_executed_instruction, PC, m0_core_state, refetch_i, PC_init, 
-                            execution_cmd_value, disable_executor) begin
+    PC_value_p : process (PC, m0_core_state, refetch_i, PC_init, 
+                            execution_cmd_value) begin
         if (m0_core_state = s_SET_PC) then
             PC_value <= unsigned (PC_init (31 downto 1) & '0');
         else  
              if (refetch_i = false) then 
-                    -- prevents PC_value to go off when 32-bit instruction is in exceution disabled mode.
-                    if (disable_executor = false) then 
-                        PC_value <= size_of_executed_instruction + unsigned (PC);
-                    else
-                        PC_value <= x"0000_0002" + unsigned (PC);     
-                    end if;
+                PC_value <= x"0000_0002" + unsigned (PC);   
              end if;      
         end if; 
     end process;
     
-    SP_main_value_p : process (m0_core_state, SP_main_init, SP_main) begin
+    SP_main_value_p : process (m0_core_state, SP_main_init, SP_main, new_SP, msr_update_MSP) begin
         if (m0_core_state = s_RESET) then
             SP_main_value <= x"0000_0000";
         else  
@@ -386,7 +394,39 @@ begin
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R6 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R7 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
-                SP_main_value <= std_logic_vector (unsigned(SP_main) + 4);                
+                SP_main_value <= std_logic_vector (unsigned(SP_main) + 4);  
+            elsif (m0_core_state = s_MSR) and msr_update_MSP then
+                SP_main_value <= new_SP;                 
+            end if;      
+        end if; 
+    end process;
+    
+    SP_process_value_p : process (m0_core_state, new_SP, msr_update_PSP) begin
+        if (m0_core_state = s_RESET) then
+            SP_process_value <= x"0000_0000";
+        else  
+            if (m0_core_state = s_MSR) and msr_update_PSP then
+                SP_process_value <= new_SP;                 
+            end if;      
+        end if; 
+    end process;
+    
+    PRIMASK_value_p : process (m0_core_state, msr_update_PRIMASK, new_PRIMASK) begin
+        if (m0_core_state = s_RESET) then
+            PRIMASK_value <= B"0";
+        else  
+            if (m0_core_state = s_MSR) and msr_update_PRIMASK then
+                PRIMASK_value <= new_PRIMASK;                 
+            end if;      
+        end if; 
+    end process;
+    
+   CONTROL_value_p : process (m0_core_state, msr_update_CONTROL, new_CONTROL) begin
+        if (m0_core_state = s_RESET) then
+            CONTROL_value <= B"00";
+        else  
+            if (m0_core_state = s_MSR) and msr_update_CONTROL then
+                CONTROL_value <= new_CONTROL;                 
             end if;      
         end if; 
     end process;
@@ -450,14 +490,14 @@ begin
          end if;      
     end process;
     
-    size_of_executed_instruction_p: process (instruction_size) begin
-        -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
-        if (instruction_size = true) then
-            size_of_executed_instruction <= x"0000_0004";
-        else
-            size_of_executed_instruction <= x"0000_0002";
-        end if;
-    end process;
+--    size_of_executed_instruction_p: process (instruction_size) begin
+--        -- false = 16-bit (2 bytes), true = 32-bit (4 bytes) 
+--        if (instruction_size = true) then
+--            size_of_executed_instruction <= x"0000_0004";
+--        else
+--            size_of_executed_instruction <= x"0000_0002";
+--        end if;
+--    end process;
     
     LDM_counter_value_p: process (m0_core_state, number_of_ones_initial, PUSH_POP_number_of_ones_initial, LDM_counter) begin
         if (m0_core_state = s_RUN) then
@@ -1012,14 +1052,16 @@ begin
                 m0_core_next_state <= s_BRANCH_Phase1;  
             when s_BRANCH_UNCOND_PC_UPDATED =>
                 m0_core_next_state <= s_BRANCH_Phase1;
+            when s_BRANCH_BL_UNCOND_PC_UPDATED =>
+                m0_core_next_state <= s_BRANCH_Phase1;
             when s_BX_PC_UPDATED =>
                 m0_core_next_state <= s_BRANCH_Phase1;   
             when s_BRANCH_Phase1 =>
                 m0_core_next_state <= s_BRANCH_Phase2;
             when s_BRANCH_Phase2 =>
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
-            when  s_BL =>
-                m0_core_next_state <= s_BRANCH_UNCOND_PC_UPDATED;   
+--            when  s_BL =>
+--                m0_core_next_state <= s_BRANCH_BL_UNCOND_PC_UPDATED;   
             when  s_BLX_PC_UPDATED =>
                 m0_core_next_state <= s_BLX_Phase1;   
             when s_BLX_Phase1 =>
@@ -1046,8 +1088,15 @@ begin
                 m0_core_next_state <= s_SVC_PC_UPDATED;           
             when s_SVC_PC_UPDATED =>
                 m0_core_next_state <= s_BRANCH_Phase1;   
-                                                                                                                                       
-               when others => m0_core_next_state <= s_RESET;
+            when s_INST32_DETECTED =>     
+                m0_core_next_state <= inst32_next_state_calc (execution_cmd_value);
+            when s_MRS =>
+                m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
+            when s_MSR =>
+                m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
+            
+                    
+            when others => m0_core_next_state <= s_RESET;
             end case;
         end if;            
     end process;
@@ -1068,7 +1117,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_SET_SP => 
+                inst32_tempor <= false;
+           when s_SET_SP => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_SP_main_init; 
                 hrdata_ctrl <= sel_SP_main_init; 
@@ -1081,6 +1131,7 @@ begin
                 HWRITE <= '0';     
                 VT_ctrl <= VT_SP_main;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_FETCH_PC => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1094,6 +1145,7 @@ begin
                 HWRITE <= '0';     
                 VT_ctrl <= VT_RESET;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_SET_PC => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_PC_init; 
@@ -1107,6 +1159,7 @@ begin
                 HWRITE <= '0';     
                 VT_ctrl <= VT_RESET;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_PRE1_RUN =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1120,7 +1173,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_PRE2_RUN =>  
+                inst32_tempor <= false;
+           when s_PRE2_RUN =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_ALU_RESULT; 
@@ -1133,6 +1187,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_RUN =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1146,6 +1201,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
              when s_DATA_MEM_ACCESS_R =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1173,6 +1229,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_EXECUTE_DATA_MEM_R =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_HRDATA_VALUE_SIZED; 
@@ -1186,7 +1243,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-             when s_DATA_MEM_ACCESS_W =>  
+                inst32_tempor <= false;
+            when s_DATA_MEM_ACCESS_W =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_ALU_RESULT; 
@@ -1203,7 +1261,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_EXECUTE_DATA_MEM_W =>  
+                inst32_tempor <= false;
+           when s_EXECUTE_DATA_MEM_W =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_HRDATA_VALUE_SIZED; 
                 hrdata_ctrl <=  sel_HRDATA_VALUE_SIZED; 
@@ -1216,7 +1275,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_PC_UPDATED =>  
+                inst32_tempor <= false;
+          when s_PC_UPDATED =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_ALU_RESULT; 
@@ -1229,7 +1289,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_PIPELINE_FLUSH1 =>  
+                inst32_tempor <= false;
+           when s_PIPELINE_FLUSH1 =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_ALU_RESULT; 
@@ -1242,7 +1303,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_PIPELINE_FLUSH2 =>  
+                inst32_tempor <= false;
+          when s_PIPELINE_FLUSH2 =>  
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
                 hrdata_ctrl <= sel_ALU_RESULT; 
@@ -1255,6 +1317,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_PIPELINE_FLUSH3 =>  
                 refetch_i <= any_access_mem; 
                 gp_data_in_ctrl <= sel_ALU_RESULT; 
@@ -1268,7 +1331,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_MEM_ACCESS_LDM =>
+                inst32_tempor <= false;
+           when s_DATA_MEM_ACCESS_LDM =>
                 LDM_STM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
                     -- it means the LDM instruction has only 1 register in its register_list
@@ -1303,6 +1367,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R0 =>  
                 LDM_cur_target_reg <= REG_R0;   
                 LDM_STM_capture_base <= false; 
@@ -1330,6 +1395,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
                 LDM_STM_capture_base <= false; 
@@ -1357,6 +1423,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
                 LDM_STM_capture_base <= false; 
@@ -1384,7 +1451,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
+                inst32_tempor <= false;
+           when s_DATA_MEM_ACCESS_EXECUTE_LDM_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
                 LDM_STM_capture_base <= false; 
                 if (LDM_counter = 1) then         -- one state before the end of LDM is over
@@ -1411,6 +1479,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
                 LDM_STM_capture_base <= false; 
@@ -1438,6 +1507,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
                 LDM_STM_capture_base <= false; 
@@ -1465,6 +1535,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
                 LDM_STM_capture_base <= false; 
@@ -1492,6 +1563,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_LDM_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
                 LDM_STM_capture_base <= false; 
@@ -1519,7 +1591,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_FINISH_STM =>
+                inst32_tempor <= false;
+           when s_FINISH_STM =>
                 -- In this state we need to write the total number of bytes written into memory to register bank
                 LDM_STM_capture_base <= false; 
                 --  we have to finish the STM in next cycle.
@@ -1539,6 +1612,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R0 =>  
                LDM_cur_target_reg <= REG_R0;
                LDM_STM_capture_base <= true;
@@ -1577,7 +1651,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_REG_ACCESS_EXECUTE_STM_R1 =>  
+                inst32_tempor <= false;
+           when s_DATA_REG_ACCESS_EXECUTE_STM_R1 =>  
                 LDM_cur_target_reg <= REG_R1;
                 LDM_STM_capture_base <= true; 
                 if (STM_PUSH_counter_diff = 1) then         -- two states before the end of STM 
@@ -1615,6 +1690,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R2 =>  
                 LDM_cur_target_reg <= REG_R2;
                 LDM_STM_capture_base <= true; 
@@ -1653,6 +1729,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R3 =>            
                 LDM_cur_target_reg <= REG_R3;
                 LDM_STM_capture_base <= true; 
@@ -1691,7 +1768,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_REG_ACCESS_EXECUTE_STM_R4 =>  
+                inst32_tempor <= false;
+           when s_DATA_REG_ACCESS_EXECUTE_STM_R4 =>  
                 LDM_cur_target_reg <= REG_R4;
                 LDM_STM_capture_base <= true; 
                 if (STM_PUSH_counter_diff = 1) then         -- two states before the end of STM 
@@ -1729,7 +1807,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_REG_ACCESS_EXECUTE_STM_R5 =>  
+                inst32_tempor <= false;
+           when s_DATA_REG_ACCESS_EXECUTE_STM_R5 =>  
                 LDM_cur_target_reg <= REG_R5;
                 LDM_STM_capture_base <= true; 
                 if (STM_PUSH_counter_diff = 1) then         -- two states before the end of STM 
@@ -1767,6 +1846,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_STM_R6 =>  
                 LDM_cur_target_reg <= REG_R6;
                 LDM_STM_capture_base <= true; 
@@ -1805,7 +1885,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_REG_ACCESS_EXECUTE_STM_R7 =>  
+                inst32_tempor <= false;
+           when s_DATA_REG_ACCESS_EXECUTE_STM_R7 =>  
                 LDM_cur_target_reg <= REG_R7;
                 LDM_STM_capture_base <= true; 
                 if (STM_PUSH_counter_diff = 1) then         -- two states before the end of STM 
@@ -1843,6 +1924,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_FINISH_PUSH =>
                 -- In this state we need to write the total number of bytes written into memory to register bank
                 LDM_STM_capture_base <= false; 
@@ -1863,6 +1945,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R0 =>  
                 LDM_cur_target_reg <= REG_R0;   
                 LDM_STM_capture_base <= true;
@@ -1901,6 +1984,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
                 LDM_STM_capture_base <= true; 
@@ -1939,6 +2023,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
                 LDM_STM_capture_base <= true; 
@@ -1977,6 +2062,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
                 LDM_STM_capture_base <= true; 
@@ -2015,6 +2101,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
                 LDM_STM_capture_base <= true; 
@@ -2053,7 +2140,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 =>  
+                inst32_tempor <= false;
+          when s_DATA_REG_ACCESS_EXECUTE_PUSH_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
                 LDM_STM_capture_base <= true; 
                 if (STM_PUSH_counter_diff = 1) then         -- two states before the end of PUSH
@@ -2091,6 +2179,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
                 LDM_STM_capture_base <= true; 
@@ -2129,6 +2218,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
                 LDM_STM_capture_base <= true; 
@@ -2167,6 +2257,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_REG_ACCESS_EXECUTE_PUSH_LR =>  
                 LDM_cur_target_reg <= REG_LR;  
                 LDM_STM_capture_base <= true; 
@@ -2205,7 +2296,8 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-             when s_DATA_MEM_ACCESS_POP =>
+                inst32_tempor <= false;
+            when s_DATA_MEM_ACCESS_POP =>
                 LDM_STM_capture_base <= true; 
                 if (LDM_counter_value = 1) then
                     -- it means the POP instruction has only 1 register in its register_list
@@ -2239,6 +2331,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;    
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R0 =>  
                 LDM_cur_target_reg <= REG_R0;   
                 LDM_STM_capture_base <= false; 
@@ -2264,6 +2357,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R1 =>  
                 LDM_cur_target_reg <= REG_R1;   
                 LDM_STM_capture_base <= false; 
@@ -2289,6 +2383,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R2 =>  
                 LDM_cur_target_reg <= REG_R2;   
                 LDM_STM_capture_base <= false; 
@@ -2314,6 +2409,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R3 =>            
                 LDM_cur_target_reg <= REG_R3;  
                 LDM_STM_capture_base <= false; 
@@ -2339,6 +2435,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R4 =>  
                 LDM_cur_target_reg <= REG_R4;   
                 LDM_STM_capture_base <= false; 
@@ -2364,6 +2461,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R5 =>  
                 LDM_cur_target_reg <= REG_R5;   
                 LDM_STM_capture_base <= false; 
@@ -2389,6 +2487,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R6 =>  
                 LDM_cur_target_reg <= REG_R6;   
                 LDM_STM_capture_base <= false; 
@@ -2414,6 +2513,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_DATA_MEM_ACCESS_EXECUTE_POP_R7 =>  
                 LDM_cur_target_reg <= REG_R7;  
                 LDM_STM_capture_base <= false; 
@@ -2439,6 +2539,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
              when s_DATA_MEM_ACCESS_EXECUTE_POP_PC =>  
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2466,6 +2567,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;     
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
            when s_BRANCH_PC_UPDATED =>     
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2479,7 +2581,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;     
                 SDC_push_read_address <= SDC_read_R0;
-             when s_BRANCH_UNCOND_PC_UPDATED =>     
+                inst32_tempor <= false;
+            when s_BRANCH_UNCOND_PC_UPDATED =>     
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
                 refetch_i <= false;                              
@@ -2493,6 +2596,21 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
+            when s_BRANCH_BL_UNCOND_PC_UPDATED =>     
+                LDM_cur_target_reg <= REG_PC;  
+                LDM_STM_capture_base <= false; 
+                refetch_i <= false;                              
+                disable_fetch <= false; 
+                haddr_ctrl <= sel_BRANCH_BL;
+                gp_data_in_ctrl <= sel_LR_DATA_BL;  
+                hrdata_ctrl <= sel_NC;  
+                disable_executor <= false; 
+                gp_addrA_executor_ctrl <= false;  
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_BX_PC_UPDATED =>     
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2507,6 +2625,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;                            
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_BRANCH_Phase1 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2521,7 +2640,8 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
-            when s_BRANCH_Phase2 =>    
+                inst32_tempor <= false;
+           when s_BRANCH_Phase2 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
                 refetch_i <= any_access_mem; 
@@ -2534,19 +2654,21 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;            
                 SDC_push_read_address <= SDC_read_R0;
-            when s_BL =>                            
-                refetch_i <= false; 
-                gp_data_in_ctrl <= sel_LR_DATA_BL;  
-                hrdata_ctrl <= sel_NC; 
-                disable_fetch <= false; 
-                disable_executor <= false; 
-                haddr_ctrl <= sel_PC;
-                gp_addrA_executor_ctrl <= false;
-                LDM_STM_capture_base <= false; 
-                LDM_cur_target_reg <= REG_NONE;
-                HWRITE <= '0'; 
-                VT_ctrl <= VT_NONE;
-                SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
+--            when s_BL =>                            
+--                refetch_i <= false; 
+--                gp_data_in_ctrl <= sel_LR_DATA_BL;  
+--                hrdata_ctrl <= sel_NC; 
+--                disable_fetch <= false; 
+--                disable_executor <= false; 
+--                haddr_ctrl <= sel_PC;
+--                gp_addrA_executor_ctrl <= false;
+--                LDM_STM_capture_base <= false; 
+--                LDM_cur_target_reg <= REG_NONE;
+--                HWRITE <= '0'; 
+--                VT_ctrl <= VT_NONE;
+--                SDC_push_read_address <= SDC_read_R0;
+--                inst32_tempor <= false;
             when s_BLX_PC_UPDATED =>                            
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_LR_DATA_BLX;  
@@ -2560,6 +2682,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_BLX_Phase1 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2574,6 +2697,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_BLX_Phase2 =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2587,6 +2711,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;   
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_SVC_PUSH_R0 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2600,6 +2725,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
             when s_SVC_PUSH_R1 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2613,6 +2739,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_R1;
+                inst32_tempor <= false;
             when s_SVC_PUSH_R2 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2626,6 +2753,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_R2;
+                inst32_tempor <= false;
             when s_SVC_PUSH_R3 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2639,6 +2767,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_R3;
+                inst32_tempor <= false;
             when s_SVC_PUSH_R12 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2652,6 +2781,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_R12;
+                inst32_tempor <= false;
             when s_SVC_PUSH_R14 =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2665,6 +2795,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_R14;
+                inst32_tempor <= false;
              when s_SVC_PUSH_RETURN_ADDR =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2678,6 +2809,7 @@ begin
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
                 SDC_push_read_address <= SDC_read_retuen_addr;
+                inst32_tempor <= false;
             when s_SVC_PUSH_xPSR =>
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2690,7 +2822,8 @@ begin
                 gp_addrA_executor_ctrl <= false;  
                 HWRITE <= '1'; 
                 VT_ctrl <= VT_NONE;       
-                SDC_push_read_address <= SDC_read_xPSR;              
+                SDC_push_read_address <= SDC_read_xPSR;  
+                inst32_tempor <= false;            
             when s_SVC_FETCH_NEW_PC =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2704,6 +2837,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_SVCall;    
                 SDC_push_read_address <= SDC_read_R0; 
+                inst32_tempor <= false;
             when s_SVC_PC_UPDATED =>    
                 LDM_cur_target_reg <= REG_PC;  
                 LDM_STM_capture_base <= false; 
@@ -2717,9 +2851,110 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_SVCall;    
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
+           when s_INST32_DETECTED =>
+--               refetch_i <= false; 
+--                gp_data_in_ctrl <= sel_gp_data_in_NC; 
+--                if (PC(1) = '0') then
+--                    -- LDR is located in position A: 
+--                    hrdata_ctrl <= sel_ALU_RESULT;      -- Update hrdata_program_value   
+--                else
+--                    -- LDR is located in position B:
+--                    if (pos_A_is_multi_cycle = true) then 
+--                        hrdata_ctrl <= sel_NC;          -- Do not update hrdata_program_value
+--                    else
+--                        hrdata_ctrl <= sel_ALU_RESULT;      -- Update hrdata_program_value       
+--                    end if;    
+--                end if;
+--                disable_executor <= true; 
+--                if (PC(1) = '1') then
+--                    disable_fetch <= false;
+--                else
+--                    disable_fetch <= any_access_mem;
+--                end if;
+--                haddr_ctrl <= sel_PC;
+--                gp_addrA_executor_ctrl <= false; 
+--                LDM_cur_target_reg <= REG_NONE;
+--                LDM_STM_capture_base <= false; 
+--                HWRITE <= '0'; 
+--                VT_ctrl <= VT_NONE;
+--                SDC_push_read_address <= SDC_read_R0;
+--                inst32_tempor <= false;
+                refetch_i <= any_access_mem; 
+                gp_data_in_ctrl <= sel_ALU_RESULT; 
+                hrdata_ctrl <= sel_ALU_RESULT; 
+                disable_executor <= false; 
+                haddr_ctrl <= sel_PC;
+                disable_fetch <= any_access_mem;
+                LDM_cur_target_reg <= REG_NONE;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_STM_capture_base <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
+            when s_MRS =>
+--                refetch_i <= any_access_mem; 
+--                gp_data_in_ctrl <= sel_special_reg;  
+--                hrdata_ctrl <= sel_ALU_RESULT; 
+--                disable_fetch <= any_access_mem; 
+--                disable_executor <= false; 
+--                haddr_ctrl <= sel_PC;
+--                gp_addrA_executor_ctrl <= false;
+--                LDM_STM_capture_base <= false; 
+--                LDM_cur_target_reg <= REG_NONE;
+--                HWRITE <= '0'; 
+--                VT_ctrl <= VT_NONE;
+--                SDC_push_read_address <= SDC_read_R0;
+--                inst32_tempor <= false;
+                refetch_i <= any_access_mem; 
+                gp_data_in_ctrl <= sel_special_reg; 
+                hrdata_ctrl <= sel_ALU_RESULT; 
+                disable_executor <= false; 
+                haddr_ctrl <= sel_PC;
+                disable_fetch <= any_access_mem;
+                LDM_cur_target_reg <= REG_NONE;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_STM_capture_base <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
+           when s_MSR =>
+--                refetch_i <= any_access_mem; 
+--                gp_data_in_ctrl <= sel_Rn;  
+--                hrdata_ctrl <= sel_ALU_RESULT; 
+--                disable_fetch <= any_access_mem; 
+--                disable_executor <= true; 
+--                haddr_ctrl <= sel_PC;
+--                gp_addrA_executor_ctrl <= false;
+--                LDM_STM_capture_base <= false; 
+--                LDM_cur_target_reg <= REG_NONE;
+--                HWRITE <= '0'; 
+--                VT_ctrl <= VT_NONE;
+--                SDC_push_read_address <= SDC_read_R0;
+--                inst32_tempor <= false;
+                refetch_i <= any_access_mem; 
+                gp_data_in_ctrl <= sel_Rn; 
+                hrdata_ctrl <= sel_ALU_RESULT; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC;
+                disable_fetch <= any_access_mem;
+                LDM_cur_target_reg <= REG_NONE;
+                gp_addrA_executor_ctrl <= false; 
+                LDM_STM_capture_base <= false; 
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
+                    
+              
                 
                 
-           
+               
+                
+          
+        
             when others => 
                 refetch_i <= false; 
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
@@ -2733,6 +2968,7 @@ begin
                 HWRITE <= '0'; 
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;
         end case;
     end process;       
  end Behavioral;

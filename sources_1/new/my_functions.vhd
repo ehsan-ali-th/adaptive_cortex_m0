@@ -37,7 +37,7 @@ package helper_funcs is
     function hexcharacter (nibble: std_logic_vector(3 downto 0)) return character;
     function to_std_logic (in_bit: bit) return std_logic;
     function to_std_logic (in_bit: boolean) return std_logic;
-   
+    function to_std_logic_vector (in_bit_vector: bit_vector) return std_logic_vector;
     
     -- Vector Table
 --    constant VT_RESET       : integer := 1;
@@ -109,7 +109,7 @@ package helper_funcs is
         s_BRANCH_Phase1,
         s_BRANCH_Phase2,
         s_BRANCH_UNCOND_PC_UPDATED,
-        s_BL,
+        s_BRANCH_BL_UNCOND_PC_UPDATED,
         s_BX_PC_UPDATED,
         s_BLX_PC_UPDATED,
         s_BLX_Phase1,
@@ -123,7 +123,10 @@ package helper_funcs is
         s_SVC_PUSH_RETURN_ADDR,
         s_SVC_PUSH_xPSR,
         s_SVC_FETCH_NEW_PC,
-        s_SVC_PC_UPDATED
+        s_SVC_PC_UPDATED,
+        s_INST32_DETECTED,
+        s_MRS,
+        s_MSR
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -141,10 +144,12 @@ package helper_funcs is
         STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
                STR_SP_imm8, STM,
         PUSH, POP,
-        BRANCH, BRANCH_imm11, BL, BL2, BX, BLX,
+        BRANCH, BRANCH_imm11, BL2, BX, BLX,
         SXTH, SXTB, UXTH, UXTB,
         REV,  REV16, REVSH,
         SVC,
+        BL, MSR, MRS, DSB, DMB, ISB,            -- 32-bit instructions  
+        EVAL_32_INSTR,
         NOP,
         NOT_DEF
         );  
@@ -167,6 +172,7 @@ package helper_funcs is
         sel_SP_main_addr_plus_4,
         sel_PC_plus_4,
         sel_BRANCH,
+        sel_BRANCH_BL,
         sel_hardd_NC,
         sel_BX_Rm,
         sel_BLX_Rm,
@@ -185,7 +191,9 @@ package helper_funcs is
         sel_PC_init,
         sel_gp_data_in_NC,
         sel_LR_DATA_BL,
-        sel_LR_DATA_BLX
+        sel_LR_DATA_BLX,
+        sel_special_reg,
+        sel_Rn
     );
     
     type hrdata_ctrl_t is (
@@ -196,7 +204,6 @@ package helper_funcs is
         sel_LDM_Rn,
         sel_SP_main_init,
         sel_PC_init,
-        sel_gp_data_in_NC,
         sel_SVC,
         sel_NC
     );    
@@ -269,6 +276,28 @@ package helper_funcs is
     constant LE : cond_t := B"1101"; 
     constant AL : cond_t := B"1110"; 
     
+    subtype mode_t is std_logic;
+    constant mode_privileged    : mode_t := '0'; 
+    constant mode_unprivileged  : mode_t := '1'; 
+    
+    subtype SP_mode_t is std_logic;
+    constant SP_mode_main     : mode_t := '0'; 
+    constant SP_mode_process  : mode_t := '1'; 
+    
+   subtype special_reg_t is std_logic_vector (7 downto 0);
+   constant sp_reg_APSR    : special_reg_t := B"0000_0000";                       -- The flags from previous instructions.
+   constant sp_reg_IAPSR   : special_reg_t := B"0000_0001";                       -- A composite of IPSR and APSR.
+   constant sp_reg_EAPSR   : special_reg_t := B"0000_0010";                       -- A composite of EPSR and APSR.
+   constant sp_reg_XPSR    : special_reg_t := B"0000_0011";                       -- A composite of all three PSR registers.
+   constant sp_reg_IPSR    : special_reg_t := B"0000_0101";                       -- The Interrupt status register.
+   constant sp_reg_EPSR    : special_reg_t := B"0000_0110";                       -- The execution status register.
+   constant sp_reg_IEPSR   : special_reg_t := B"0000_0111";                       -- A composite of IPSR and EPSR.
+   constant sp_reg_MSP     : special_reg_t := B"0000_1000";                       -- The Main Stack pointer.
+   constant sp_reg_PSP     : special_reg_t := B"0000_1001";                       -- The Process Stack pointer.
+   constant sp_reg_PRIMASK : special_reg_t := B"0001_0000";                       -- Register to mask out configurable exceptions.
+   constant sp_reg_CONTROL : special_reg_t := B"0001_0100";                       -- The CONTROL register.
+
+    
     -- Cortex-M0 functions
     function IsAligned (
         address : in std_logic_vector (31 downto 0);
@@ -281,7 +310,12 @@ package helper_funcs is
         PC_updated      : boolean; 
         imm8_value      : std_logic_vector (7 downto 0);
         LR_PC           : std_logic;
-        cond_satisfied  : boolean) return  core_state_t; 
+        cond_satisfied  : boolean
+        ) return  core_state_t; 
+        
+        function inst32_next_state_calc (
+        execution_cmd   : executor_cmds_t
+        ) return  core_state_t; 
   
 end  helper_funcs;
 
@@ -350,6 +384,17 @@ package body helper_funcs is
         return ret; 
     end function;
   
+  
+   function to_std_logic_vector (in_bit_vector: bit_vector) return std_logic_vector is 
+    variable ret : std_logic_vector (in_bit_vector'RANGE);
+        begin
+            for i in in_bit_vector'RANGE loop
+                ret(i) := to_std_logic(in_bit_vector(i));
+            end loop;
+            return ret;
+        end;
+   
+   
     function IsAligned ( address : in std_logic_vector (31 downto 0);
                          size : in integer) return boolean is
         variable ret : boolean;
@@ -387,7 +432,8 @@ package body helper_funcs is
         PC_updated      : boolean;
         imm8_value      : std_logic_vector (7 downto 0);
         LR_PC           : std_logic;
-        cond_satisfied  : boolean) return core_state_t is
+        cond_satisfied  : boolean
+        ) return core_state_t is
         variable next_state : core_state_t;
       begin
             -- CHECK if instruction needs memory access
@@ -451,8 +497,8 @@ package body helper_funcs is
                 end if;      
                 -- CHECK if instruction updates PC
             elsif (PC_updated = true) then
-                 report "PC_updated = true, cond_satisfied= " &  boolean'image(cond_satisfied) & 
-                    "execution_cmd= " & executor_cmds_t'image(execution_cmd) severity note;  
+                 --report "PC_updated = true, cond_satisfied= " &  boolean'image(cond_satisfied) & 
+                   -- "execution_cmd= " & executor_cmds_t'image(execution_cmd) severity note;  
                 if (execution_cmd = BRANCH) then    
                     if (cond_satisfied = true) then
                          next_state := s_BRANCH_PC_UPDATED;
@@ -461,8 +507,6 @@ package body helper_funcs is
                     end if;
                 elsif (execution_cmd = BRANCH_imm11) then  
                     next_state := s_BRANCH_UNCOND_PC_UPDATED;    
-                elsif (execution_cmd = BL) then  
-                    next_state := s_BL;
                 elsif (execution_cmd = BX) then  
                     next_state := s_BX_PC_UPDATED;                
                 elsif (execution_cmd = BLX) then  
@@ -472,13 +516,31 @@ package body helper_funcs is
                 else
                     next_state := s_PC_UPDATED;
                 end if;  
+            elsif (execution_cmd = EVAL_32_INSTR) then
+                next_state := s_INST32_DETECTED;
             else    
                 next_state := s_RUN;     
-            end if;  
-                
-                
-                
+            end if;
         return  next_state; 
-  end function;
+     end function;
+
+
+     function inst32_next_state_calc (
+        execution_cmd   : executor_cmds_t
+        )  return core_state_t is
+     variable next_state : core_state_t;
+     begin
+        if (execution_cmd = BL) then  
+            next_state := s_BRANCH_BL_UNCOND_PC_UPDATED;
+        elsif  (execution_cmd = MRS) then
+            next_state := s_MRS; 
+        elsif  (execution_cmd = MSR) then
+            next_state := s_MSR;      
+        else    
+            next_state := s_RUN;     
+        end if;
+        return  next_state; 
+    end function;
+
 
 end  helper_funcs;

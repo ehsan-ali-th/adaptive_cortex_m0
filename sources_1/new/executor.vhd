@@ -127,7 +127,8 @@ begin
         if (gp_data_in_ctrl = sel_HRDATA_VALUE_SIZED or 
             gp_data_in_ctrl = sel_LDM_DATA or 
             gp_data_in_ctrl = sel_LDM_Rn or 
-            gp_data_in_ctrl = sel_STM_total_bytes_wrote) then
+            gp_data_in_ctrl = sel_STM_total_bytes_wrote OR
+            gp_data_in_ctrl = sel_special_reg) then
             WE <= '1';
         elsif (access_mem = true or disable_executor = true) then
              WE <= '0';   
@@ -322,9 +323,22 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0';
                 mem_access <= true;     
-          
-           
-            
+            -------------------------------------------------------------------------------------- -- MRS <Rd>,<spec_reg>
+            when MRS =>
+                WE_val <= '0';              
+                mux_ctrl <= B"00";          
+                set_flags <= false;
+                overflow_status <= (others => '0');
+                update_PC <= '0'; 
+                mem_access <= false;  
+            -------------------------------------------------------------------------------------- -- MSR <spec_reg>,<Rn>
+            when MSR =>
+                WE_val <= '0';              
+                mux_ctrl <= B"00";          
+                set_flags <= true;
+                overflow_status <= (others => '0');
+                update_PC <= '0'; 
+                mem_access <= false;  
                 
                         
             when NOP =>
@@ -625,7 +639,10 @@ begin
             -------------------------------------------------------------------------------------- -- SVC #<imm8>
             when SVC => 
                  alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used  
-                 
+            -------------------------------------------------------------------------------------- -- MRS <Rd>,<spec_reg>
+            -------------------------------------------------------------------------------------- -- MSR <spec_reg>,<Rn>
+            when MRS | MSR  =>      
+                alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used       
             -------------------------------------------------------------------------------------- -- others indefined instructions
             when NOP =>
                 alu_temp <= (others => '0');   
