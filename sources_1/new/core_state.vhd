@@ -417,12 +417,15 @@ begin
         end if; 
     end process;
     
-    PRIMASK_value_p : process (m0_core_state, msr_update_PRIMASK, new_PRIMASK) begin
+    PRIMASK_value_p : process (execution_cmd_value, m0_core_state, msr_update_PRIMASK, new_PRIMASK, imm8_value) begin
         if (m0_core_state = s_RESET) then
             PRIMASK_value <= B"0";
         else  
-            if (m0_core_state = s_MSR) and msr_update_PRIMASK then
-                PRIMASK_value <= new_PRIMASK;                 
+            if (execution_cmd_value = CPS)  then
+                PRIMASK_value <= imm8_value (0 downto 0);
+            elsif (m0_core_state = s_MSR) and msr_update_PRIMASK then
+                PRIMASK_value <= new_PRIMASK;  
+                                
             end if;      
         end if; 
     end process;

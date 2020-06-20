@@ -348,7 +348,15 @@ begin
                 set_flags <= false;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
-                mem_access <= false;    
+                mem_access <= false; 
+            -------------------------------------------------------------------------------------- -- CPS  
+            when CPS =>     
+                WE_val <= '0';              
+                mux_ctrl <= B"00";          -- alu_result
+                set_flags <= false;
+                overflow_status <= (others => '0');
+                update_PC <= '0'; 
+                mem_access <= false;  
                         
             when NOP =>
                 WE_val <= '0';              
@@ -657,6 +665,9 @@ begin
             -------------------------------------------------------------------------------------- -- DMB 
             -------------------------------------------------------------------------------------- -- DSB
             when ISB | DMB | DSB => 
+                alu_temp <= (others => '0');
+            ------------------------------------------------------------------------------------- -- CPS
+            when CPS => 
                 alu_temp <= (others => '0');
             
             -------------------------------------------------------------------------------------- -- others undefined instructions

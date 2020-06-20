@@ -1039,6 +1039,7 @@ begin
             when BRANCH         => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when BRANCH_imm11   => imm8_z_ext_value <= x"0000_0" & '0' & gp_addrA_value(2 downto 0) & imm8;  -- Zero extend
             when BL             => imm8_z_ext_value <= x"0000_0" & '0' & gp_addrA_value(2 downto 0) & imm8;  -- Zero extend
+            when CPS            => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process; 
@@ -1660,12 +1661,32 @@ begin
                     Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
                     Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
                     cortex_m0_opcode <= "REVSH " & " " & Rd_decode & ", " & Rm_decode & "    ";  
-                elsif std_match(current_instruction_final(15 downto 11), "11110") then    
-                    imm11_decode (2) :=  hexcharacter ('0' & current_instruction_final (10 downto 8));
-                    imm11_decode (3) :=  hexcharacter (current_instruction_final (7 downto 4));
-                    imm11_decode (4) :=  hexcharacter (current_instruction_final (3 downto 0));  
-                    cortex_m0_opcode <= "BL" & " ,{" & imm11_decode & "}"  & "       ";         
-
+                ------------------------------------------------------------------------------------- --  CPS<effect> i 
+                elsif std_match(current_instruction_final(15 downto 5), "10110110011") and
+                      std_match(current_instruction_final(3 downto 0), "0010") then    
+                    imm8_decode(2) :=   hexcharacter (B"0000");
+                    imm8_decode(3) :=   hexcharacter (B"000" & current_instruction_final (4));
+                    cortex_m0_opcode <= "CPS " & imm8_decode & "          ";         
+                ------------------------------------------------------------------------------------- --  BKPT #<imm8>
+                elsif std_match(current_instruction_final(15 downto 8), "10111110") then    
+                    imm8_decode(2) :=   hexcharacter (current_instruction_final (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "BKPT " & imm8_decode & "         ";
+                ------------------------------------------------------------------------------------- --  SEV
+                elsif std_match(current_instruction_final(15 downto 0), "1011111101000000") then    
+                    imm8_decode(2) :=   hexcharacter (current_instruction_final (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "SEV " & imm8_decode & "          ";
+                ------------------------------------------------------------------------------------- --  WFI
+                elsif std_match(current_instruction_final(15 downto 0), "1011111100110000") then    
+                    imm8_decode(2) :=   hexcharacter (current_instruction_final (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "WFI " & imm8_decode & "          "; 
+                ------------------------------------------------------------------------------------- --  YIELD
+                elsif std_match(current_instruction_final(15 downto 0), "1011111100010000") then    
+                    imm8_decode(2) :=   hexcharacter (current_instruction_final (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "YIELD " & imm8_decode & "        ";          
               
                 end if;
             else -- inst32_detected = true

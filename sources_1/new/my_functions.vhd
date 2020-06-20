@@ -154,6 +154,7 @@ package helper_funcs is
         SVC,
         BL, MSR, MRS, DSB, DMB, ISB,            -- 32-bit instructions  
         EVAL_32_INSTR,
+        CPS,
         NOP,
         NOT_DEF
         );  
