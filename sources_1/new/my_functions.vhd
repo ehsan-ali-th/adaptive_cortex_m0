@@ -126,7 +126,11 @@ package helper_funcs is
         s_SVC_PC_UPDATED,
         s_INST32_DETECTED,
         s_MRS,
-        s_MSR
+        s_MSR,
+        s_ISB,
+        s_DMB,
+        s_DSB
+
         );
 
     type executor_cmds_t is (                               -- Executor commands
@@ -535,7 +539,13 @@ package body helper_funcs is
         elsif  (execution_cmd = MRS) then
             next_state := s_MRS; 
         elsif  (execution_cmd = MSR) then
-            next_state := s_MSR;      
+            next_state := s_MSR; 
+        elsif  (execution_cmd = ISB) then
+            next_state := s_ISB;   
+        elsif  (execution_cmd = DMB) then
+            next_state := s_DMB;  
+        elsif  (execution_cmd = DSB) then
+            next_state := s_DSB;                         
         else    
             next_state := s_RUN;     
         end if;

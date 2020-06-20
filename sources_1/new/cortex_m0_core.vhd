@@ -1665,11 +1665,7 @@ begin
                     imm11_decode (3) :=  hexcharacter (current_instruction_final (7 downto 4));
                     imm11_decode (4) :=  hexcharacter (current_instruction_final (3 downto 0));  
                     cortex_m0_opcode <= "BL" & " ,{" & imm11_decode & "}"  & "       ";         
-                ------------------------------------------------------------------------------------- -- MRS <Rd>,<spec_reg>
---                elsif std_match(current_instruction_final(15 downto 0), "1111001111101111") then    
---                    Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rd 
---                    Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3)); -- Rm 
---                    cortex_m0_opcode <= "MRS              ";                     
+
               
                 end if;
             else -- inst32_detected = true

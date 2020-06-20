@@ -197,6 +197,9 @@ begin
         if (execution_cmd_value = BL) then
             branch_target_address_value <= 
                 signed(PC_after_execute) + (signed (BL_target_address_value_sign_ext) + 4);
+--        elsif (execution_cmd_value = ISB or execution_cmd_value = DSB or execution_cmd_value = DMB) then
+--             branch_target_address_value <= 
+--                signed(PC_after_execute) + 4;        
         elsif (m0_core_state = s_SVC_PC_UPDATED) then
             branch_target_address_value <= signed (new_PC);     -- SVC exception no. = 11 * 4 = 44 = 0x2C                                        
         elsif (execution_cmd = BRANCH) then
@@ -291,9 +294,12 @@ begin
                 if (m0_core_next_state = s_INST32_DETECTED) then
                     Rn <= current_instruction(3 downto 0);
                 end if;    
-                if (execution_cmd = BRANCH or execution_cmd = BRANCH_imm11) then        -- BRANCH_imm11 covers BL and unconditional branch
-                    branch_target_address <= std_logic_vector (branch_target_address_value);
-                elsif (execution_cmd_value = BL) then
+                if (execution_cmd = BRANCH or 
+                    execution_cmd = BRANCH_imm11 or
+                    execution_cmd_value = BL or
+                    execution_cmd_value = ISB or
+                    execution_cmd_value = DSB or
+                    execution_cmd_value = DMB) then        -- BRANCH_imm11 covers BL and unconditional branch
                     branch_target_address <= std_logic_vector (branch_target_address_value);    
                 end if;  
                 if (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
@@ -301,11 +307,11 @@ begin
                     PC_decode <= std_logic_vector (branch_target_address);
                     PC_execute <= PC_decode;
                     PC_after_execute <= PC_execute;   
---                elsif (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
---                    PC <=  std_logic_vector (unsigned (branch_target_address) + 2); 
---                    PC_decode <= std_logic_vector (branch_target_address);
+--                elsif (m0_core_state = s_ISB or m0_core_state = s_DMB or m0_core_state = s_DSB) then 
+--                    PC <=  std_logic_vector (unsigned (branch_target_address(31 downto 1) & '0')); 
+--                    PC_decode <= std_logic_vector ( unsigned (branch_target_address(31 downto 1) & '0') - 2);
 --                    PC_execute <= PC_decode;
---                    PC_after_execute <= PC_execute;     
+--                    PC_after_execute <= PC_execute;  
                 elsif (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then    
                     PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
                     PC_decode <= std_logic_vector (branch_target_address_value);
@@ -1060,8 +1066,6 @@ begin
                 m0_core_next_state <= s_BRANCH_Phase2;
             when s_BRANCH_Phase2 =>
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
---            when  s_BL =>
---                m0_core_next_state <= s_BRANCH_BL_UNCOND_PC_UPDATED;   
             when  s_BLX_PC_UPDATED =>
                 m0_core_next_state <= s_BLX_Phase1;   
             when s_BLX_Phase1 =>
@@ -1094,6 +1098,10 @@ begin
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
             when s_MSR =>
                 m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
+            when s_ISB | s_DMB | s_DSB =>
+                m0_core_next_state <= run_next_state_calc (any_access_mem, access_mem_mode, execution_cmd_value, PC_updated, imm8_value, LR_PC, cond_satisfied_value);
+  
+                     
             
                     
             when others => m0_core_next_state <= s_RESET;
@@ -2947,8 +2955,21 @@ begin
                 VT_ctrl <= VT_NONE;
                 SDC_push_read_address <= SDC_read_R0;
                 inst32_tempor <= false;
-                    
-              
+           when s_ISB | s_DMB | s_DSB =>        
+                refetch_i <= false; 
+                gp_data_in_ctrl <= sel_gp_data_in_NC;  
+                hrdata_ctrl <= sel_ALU_RESULT; 
+                disable_fetch <= false; 
+                disable_executor <= true; 
+                haddr_ctrl <= sel_PC;
+                gp_addrA_executor_ctrl <= false;
+                LDM_STM_capture_base <= false; 
+                LDM_cur_target_reg <= REG_NONE;
+                HWRITE <= '0'; 
+                VT_ctrl <= VT_NONE;
+                SDC_push_read_address <= SDC_read_R0;
+                inst32_tempor <= false;   
+                 
                 
                 
                
@@ -2960,7 +2981,7 @@ begin
                 gp_data_in_ctrl <= sel_gp_data_in_NC;  
                 hrdata_ctrl <= sel_NC; 
                 disable_fetch <= false; 
-                disable_executor <= false; 
+                disable_executor <= true; 
                 haddr_ctrl <= sel_PC;
                 gp_addrA_executor_ctrl <= false;
                 LDM_STM_capture_base <= false; 

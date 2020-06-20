@@ -189,7 +189,7 @@ begin
                 cond <=  B"1111"; 
             elsif  std_match(prev_inst(10 downto 4), "0111011") and std_match(instruction(7 downto 4), "0110") then
                 -- ISB
-                 gp_WR_addr <= B"0000";                                     -- Will not be used '0'                  
+                gp_WR_addr <= B"0000";                                      -- Will not be used '0'                  
                 gp_addrA <= B"0000";                                        -- Will not be used '0'         
                 gp_addrB <= B"0000";                                        -- Will not be used '0' 
                 gp_addrC <= B"0000";                                        -- Will not be used '0' 
@@ -205,7 +205,7 @@ begin
                 LR_PC <= '0';         
                 cond <=  B"1111";
             else    
-                 report "Unknown 32-bit instruction. Exception must be raised." severity error;                
+                report "Unknown 32-bit instruction. Exception must be raised." severity error;                
             end if;       
         else
             if (inst32_detected = false) then
