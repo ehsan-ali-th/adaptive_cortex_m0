@@ -90,7 +90,7 @@ begin
         mem_address_int := to_integer(unsigned(cortex_m0_HADDR));
         case (mem_address_int) is
             when 0          to     32767      => HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0000_8000 
-            when 536870912  to     536903680  => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x0000_8000
+            when 536870912  to     536903680  => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x2000_8000
             when others                       => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None  
         end case;
     end process;

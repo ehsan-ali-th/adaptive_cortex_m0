@@ -647,10 +647,10 @@
 #set_property IOSTANDARD  LVCMOS33 [get_ports "HDMI_RX_PWR_DET"] ;# Bank  88 VCCO - VCC3V3   - IO_L12N_AD8N_88
 #set_property PACKAGE_PIN F6       [get_ports "HDMI_RX_HPD"] ;# Bank  88 VCCO - VCC3V3   - IO_L12P_AD8P_88
 #set_property IOSTANDARD  LVCMOS33 [get_ports "HDMI_RX_HPD"] ;# Bank  88 VCCO - VCC3V3   - IO_L12P_AD8P_88
-set_property PACKAGE_PIN D5       [get_ports "LED0"] ;# Bank  88 VCCO - VCC3V3   - IO_L11N_AD9N_88
-set_property IOSTANDARD  LVCMOS33 [get_ports "LED0"] ;# Bank  88 VCCO - VCC3V3   - IO_L11N_AD9N_88
-set_property PACKAGE_PIN D6       [get_ports "LED1"] ;# Bank  88 VCCO - VCC3V3   - IO_L11P_AD9P_88
-set_property IOSTANDARD  LVCMOS33 [get_ports "LED1"] ;# Bank  88 VCCO - VCC3V3   - IO_L11P_AD9P_88
+set_property PACKAGE_PIN D5       [get_bd_ports "LED0"] ;# Bank  88 VCCO - VCC3V3   - IO_L11N_AD9N_88
+set_property IOSTANDARD  LVCMOS33 [get_bd_ports "LED0"] ;# Bank  88 VCCO - VCC3V3   - IO_L11N_AD9N_88
+set_property PACKAGE_PIN D6       [get_bd_ports "LED1"] ;# Bank  88 VCCO - VCC3V3   - IO_L11P_AD9P_88
+set_property IOSTANDARD  LVCMOS33 [get_bd_ports "LED1"] ;# Bank  88 VCCO - VCC3V3   - IO_L11P_AD9P_88
 #set_property PACKAGE_PIN A5       [get_ports "GPIO_LED_2_LS"] ;# Bank  88 VCCO - VCC3V3   - IO_L10N_AD10N_88
 #set_property IOSTANDARD  LVCMOS33 [get_ports "GPIO_LED_2_LS"] ;# Bank  88 VCCO - VCC3V3   - IO_L10N_AD10N_88
 #set_property PACKAGE_PIN B5       [get_ports "GPIO_LED_3_LS"] ;# Bank  88 VCCO - VCC3V3   - IO_L10P_AD10P_88
@@ -1519,3 +1519,5 @@ set_property IOSTANDARD  LVCMOS33 [get_ports "LED1"] ;# Bank  88 VCCO - VCC3V3  
 ##Other net   PACKAGE_PIN AD22     - VCCINT_VCU                Bank 999 - VCCINT_VCU
 ##Other net   PACKAGE_PIN AD23     - VCCINT_VCU                Bank 999 - VCCINT_VCU
 ##Other net   PACKAGE_PIN AD24     - VCCINT_VCU                Bank 999 - VCCINT_VCU
+
+create_clock -period 20.000 -name HCLK -waveform {0.000 10.000} [get_ports HCLK]
