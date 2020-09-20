@@ -80,7 +80,7 @@ begin
     );
     
     process begin
-        wait for 12000 ns;
+        wait for 200 ms;
         report "Simulation finished"  severity note;
         std.env.finish;
     end process;

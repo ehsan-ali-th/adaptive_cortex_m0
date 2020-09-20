@@ -46,12 +46,14 @@ entity executor is
          access_mem : in boolean;
          gp_data_in_ctrl : in gp_data_in_ctrl_t;
          disable_executor : in boolean;
+         SP_main : in std_logic_vector(31 downto 0);	
          cmd_out: out executor_cmds_t;
          set_flags : out boolean;
          result : out std_logic_vector(31 downto 0);
          alu_temp_32 : out std_logic;
          overflow_status : out std_logic_vector(2 downto 0);
-         WE: out std_logic                                          -- Controls the WE pin of register bank. Used to flush the pipeline
+         WE : out std_logic;                                          -- Controls the WE pin of register bank. Used to flush the pipeline
+         SP_updated : out boolean
      );
 end executor;
 
@@ -147,6 +149,7 @@ begin
                 set_flags <= true;
                 overflow_status <= (others => '0');
                 mem_access <= false;
+                SP_updated <= false;
             ------------------------------------------------------------ -- MOVS <Rd>,<Rm>    
             when MOVS =>                    
                 WE_val <= '1'; 
@@ -155,6 +158,7 @@ begin
                 set_flags <= true;
                 overflow_status <= (others => '0');
                 mem_access <= false;
+                SP_updated <= false;
             ------------------------------------------------------------ -- MOV <Rd>,<Rm> | MOV PC, Rm       
             when MOV =>                                                 
                 WE_val <= '1'; 
@@ -164,6 +168,7 @@ begin
                 overflow_status <= (others => '0');
                 if (destination_is_PC = true) then update_PC <= '1'; else update_PC <= '0'; end if;
                 mem_access <= false;
+                SP_updated <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,#<imm3>      
             ------------------------------------------------------------ -- ADDS <Rdn>,#<imm8>    
             ------------------------------------------------------------ -- SUBS <Rd>,<Rn>,#<imm3>  
@@ -176,6 +181,16 @@ begin
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;
+                SP_updated <= false;
+            ------------------------------------------------------------ -- ADD <Rd>,SP,#<imm8>
+            when ADD_SP_imm8 =>                                        
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                update_PC <= '0';
+                mem_access <= false;
+                SP_updated <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,<Rm>       
             ------------------------------------------------------------ -- ADD <Rdn>,<Rm>   
             ------------------------------------------------------------ -- ADCS <Rdn>,<Rm> 
@@ -188,6 +203,7 @@ begin
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;   
+                SP_updated <= false;
             ------------------------------------------------------------ --  ADD PC,<Rm>
             when ADD_PC =>    
                 WE_val <= '0'; 
@@ -196,6 +212,25 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '1';
                 mem_access <= false;
+                SP_updated <= false;
+            ------------------------------------------------------------ -- ADD SP,SP,#<imm7>
+            when ADD_SP_SP_imm7 =>                                        
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                update_PC <= '0';
+                mem_access <= false;    
+                SP_updated <= true;
+            ------------------------------------------------------------ -- SUB SP,SP,#<imm7>
+            when SUB_SP_imm7 =>                                        
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false;
+                overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                update_PC <= '0';
+                mem_access <= false;    
+                SP_updated <= true;
             ------------------------------------------------------------ -- MULS <Rdm>,<Rn>,<Rdm>     
             ------------------------------------------------------------ -- ANDS <Rdn>,<Rm>     
             ------------------------------------------------------------ -- EORS <Rdn>,<Rm>     
@@ -218,6 +253,8 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;
+                SP_updated <= false;
+
             ------------------------------------------------------------ -- CMP <Rn>,<Rm>     T1, T2  
             ------------------------------------------------------------ -- CMN <Rn>,<Rm>    
             ------------------------------------------------------------ -- CMP <Rn>,#<imm8>     
@@ -229,8 +266,10 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;
-                
+                SP_updated <= false;
+
             ---------------------------------------------------------- --   LDR <Rt>, [<Rn>{,#<imm5>}]
+            ---------------------------------------------------------- --   LDR <Rt>,[SP{,#<imm8>}]
             ---------------------------------------------------------- --   LDRH <Rt>,[<Rn>{,#<imm5>}]
             ---------------------------------------------------------- --   LDRB <Rt>,[<Rn>{,#<imm5>}]
             ---------------------------------------------------------- --   LDR <Rt>,[<Rn>,<Rm>]
@@ -240,13 +279,14 @@ begin
             ---------------------------------------------------------- --   LDRSB <Rt>,[<Rn>,<Rm>]
             ---------------------------------------------------------- --   LDR <Rt>,<label>
             ---------------------------------------------------------- --   LDM <Rn>!,<registers>
-            when LDR | LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDRH | LDRSH | LDRB | 
+            when LDR | LDR_imm5 | LDR_SP_imm8 | LDRH_imm5 | LDRB_imm5 | LDRH | LDRSH | LDRB | 
                   LDRSB | LDR_label | LDM  =>                                               
                 WE_val <= '1';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 update_PC <= '0'; 
                 mem_access <= true;
+                SP_updated <= false;
             
             ---------------------------------------------------------- --  STR <Rt>, [<Rn>{,#<imm5>}]
             ---------------------------------------------------------- --  STRH <Rt>,[<Rn>{,#<imm5>}]
@@ -263,6 +303,7 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= true;
+                SP_updated <= false;
             
             -------------------------------------------------------------------------------------- --  PUSH <registers>
             -------------------------------------------------------------------------------------- --  POP <registers>
@@ -273,6 +314,7 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= true;                     
+                SP_updated <= false;
 
             -------------------------------------------------------------------------------------- --  B <label>    T1
             -------------------------------------------------------------------------------------- --  B <label>    T2
@@ -284,6 +326,8 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= true;   
+                SP_updated <= false;
+
             -------------------------------------------------------------------------------------- --  BL <label>  
             -------------------------------------------------------------------------------------- --  BLX <label>           
             when BL | BLX =>
@@ -293,6 +337,8 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= true;      
+                SP_updated <= false;
+
             -------------------------------------------------------------------------------------- -- SXTH <Rd>,<Rm>     
             -------------------------------------------------------------------------------------- -- SXTB <Rd>,<Rm>    
             -------------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm> 
@@ -314,6 +360,7 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0';
                 mem_access <= false;   
+                SP_updated <= false;
                           
             -------------------------------------------------------------------------------------- -- SVC #<imm8>
             when SVC => 
@@ -323,6 +370,8 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0';
                 mem_access <= true;     
+                SP_updated <= false;
+
             -------------------------------------------------------------------------------------- -- MRS <Rd>,<spec_reg>
             when MRS =>
                 WE_val <= '0';              
@@ -331,6 +380,8 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;  
+                SP_updated <= false;
+
             -------------------------------------------------------------------------------------- -- MSR <spec_reg>,<Rn>
             when MSR =>
                 WE_val <= '0';              
@@ -339,6 +390,7 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;  
+                SP_updated <= false;
             -------------------------------------------------------------------------------------- -- ISB
             -------------------------------------------------------------------------------------- -- DMB
             -------------------------------------------------------------------------------------- -- DSB
@@ -357,6 +409,7 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;  
+                SP_updated <= false;
                         
             when NOP =>
                 WE_val <= '0';              
@@ -365,6 +418,8 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;    
+                SP_updated <= false;
+
             ------------------------------------------------------------ -- All undefined instructions        
             when others  => 
                 WE_val <= '0'; 
@@ -373,6 +428,7 @@ begin
                 overflow_status <= (others => '0');
                 update_PC <= '0';
                 mem_access <= false;
+                SP_updated <= false;
        end case;  
      end process;
      
@@ -398,6 +454,9 @@ begin
                 alu_temp <= (unsigned ("0" & operand_A) +                        
                               unsigned("0" & operand_B) + 2)
                               and B"1_1111_1111_1111_1111_1111_1111_1111_1110"; 
+            -------------------------------------------------------------------------------------- -- ADD SP,SP,#<imm7>      
+            when ADD_SP_SP_imm7 =>
+                alu_temp <= (unsigned("0" & SP_main) + unsigned (imm8_z_ext)) ;                   
             -------------------------------------------------------------------------------------- -- ADDS <Rdn>,#<imm8>                                                    
             when ADDS_imm8 =>   
                 -- AddWithCarry(R[n], imm32, '0');      
@@ -405,7 +464,10 @@ begin
             -------------------------------------------------------------------------------------- -- ADCS <Rdn>,<Rm>                
             when ADCS =>      
                 -- AddWithCarry(R[n], shifted, APSR.C);      
-                alu_temp <= ((unsigned ("0" & operand_A) + unsigned("0" & operand_B)) + to_std_logic(current_flags.C)) ;         
+                alu_temp <= (unsigned ("0" & operand_A) + unsigned("0" & operand_B)) + to_std_logic(current_flags.C) ; 
+            -------------------------------------------------------------------------------------- -- ADD <Rd>,SP,#<imm8>      
+            when ADD_SP_imm8 =>      
+                alu_temp <= (unsigned ("0" & operand_A) + unsigned("0" & SP_main)) ;          
             -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>
             when SUBS_imm3 =>       
                 -- AddWithCarry(R[n], NOT(imm32), '1');
@@ -426,7 +488,10 @@ begin
             -------------------------------------------------------------------------------------- -- RSBS <Rd>,<Rn>,#0
             when RSBS =>      
                 -- AddWithCarry(NOT(R[n]), imm32, '1');        
-                alu_temp <= unsigned (not('0' & operand_A)) + 1;                                                                     
+                alu_temp <= unsigned (not('0' & operand_A)) + 1;                  
+            -------------------------------------------------------------------------------------- -- SUB SP,SP,#<imm7>      
+            when SUB_SP_imm7 =>      
+                alu_temp <= (unsigned("0" & SP_main) - unsigned (imm8_z_ext)) ;                                                        
             -------------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>
             when MULS =>      
                 -- result = operand1 * operand2;        
@@ -577,6 +642,7 @@ begin
             
            
             -------------------------------------------------------------------------------------- --  LDR <Rt>, [<Rn>{,#<imm5>}]
+            -------------------------------------------------------------------------------------- --  LDR <Rt>,[SP{,#<imm8>}]
             -------------------------------------------------------------------------------------- --  LDRH <Rt>,[<Rn>{,#<imm5>}]
             -------------------------------------------------------------------------------------- --  LDRB <Rt>,[<Rn>{,#<imm5>}]
             -------------------------------------------------------------------------------------- --  LDR <Rt>,[<Rn>,<Rm>]
@@ -586,7 +652,7 @@ begin
             -------------------------------------------------------------------------------------- --  LDRSB <Rt>,[<Rn>,<Rm>]
             -------------------------------------------------------------------------------------- --  LDR <Rt>,<label>
             -------------------------------------------------------------------------------------- --  LDM <Rn>!,<registers>
-            when  LDR | LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDRH | LDRSH | LDRB | 
+            when  LDR | LDR_imm5 | LDR_SP_imm8 | LDRH_imm5 | LDRB_imm5 | LDRH | LDRSH | LDRB | 
                   LDRSB | LDR_label | LDM  =>             
                 alu_temp <= (others => '0');            -- just set the result to 0 but it will not be used
             

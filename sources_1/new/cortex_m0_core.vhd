@@ -52,6 +52,9 @@ entity cortex_m0_core is
             
             -- EVENT INPUT
             RXEV : in std_logic;
+            
+--            -- Accelerator related signals:
+--            invoke_accelerator : in std_logic;
 
             -- AMBA 3 AHB-LITE INTERFACE OUTPUTS
            HADDR : out std_logic_vector (31 downto 0);  -- AHB transaction address  format [Lower byte-Upper byte | Lower byte-Upper byte]
@@ -131,12 +134,14 @@ architecture Behavioral of cortex_m0_core is
              access_mem : in boolean;
              gp_data_in_ctrl : in gp_data_in_ctrl_t;
              disable_executor : in boolean;
+             SP_main : in std_logic_vector(31 downto 0);
              cmd_out: out executor_cmds_t;
              set_flags : out boolean;
              result : out std_logic_vector(31 downto 0);
              alu_temp_32 : out std_logic;
              overflow_status : out std_logic_vector(2 downto 0);
-             WE: out std_logic
+             WE: out std_logic;
+             SP_updated : out boolean
          );
     end component;
     
@@ -158,6 +163,7 @@ architecture Behavioral of cortex_m0_core is
             execution_cmd_value : in executor_cmds_t;
             LDM_STM_access_mem : in boolean;
             new_PC : in std_logic_vector (31 downto 0);
+            SP_updated : in boolean;
             access_mem_mode : in access_mem_mode_t;
             SP_main_init : in std_logic_vector (31 downto 0);
             PC_init : in std_logic_vector (31 downto 0);
@@ -246,9 +252,7 @@ architecture Behavioral of cortex_m0_core is
     -- Declare reset interface
     ATTRIBUTE X_INTERFACE_INFO of HRESETn: SIGNAL is "xilinx.com:signal:reset:1.0 HRESETn RST";
     ATTRIBUTE X_INTERFACE_PARAMETER of HRESETn: SIGNAL is "POLARITY ACTIVE_HIGH";
-    
 
-			
 	-- M0 Core signals 
     signal PC: std_logic_vector (31 downto 0);
     signal PC_decode:  std_logic_vector (31 downto 0);
@@ -350,6 +354,8 @@ architecture Behavioral of cortex_m0_core is
 	signal cmd_out : executor_cmds_t;	
 	signal set_flags : boolean;
 	signal msr_flags : boolean;
+	signal SP_updated : boolean;
+	
 	
 	signal mem_access_exec : boolean;
 	signal alu_temp_32 : std_logic;
@@ -358,6 +364,7 @@ architecture Behavioral of cortex_m0_core is
 	signal executor_opernd_B : std_logic_vector (31 downto 0);
 	
 	-- core state signals
+	signal HADDR_temp  :  std_logic_vector (31 downto 0);
     signal flags       :  flag_t;
     signal instr_ptr : std_logic;
     signal disable_fetch : boolean;
@@ -377,6 +384,7 @@ architecture Behavioral of cortex_m0_core is
     signal SDC_push_read_address : SDC_push_read_address_t;
     signal PRIMASK:  std_logic_vector (0 downto 0);
     signal CONTROL:  std_logic_vector (1 downto 0);
+    signal new_SP: std_logic_vector (31 downto 0); 
     
     
    
@@ -410,9 +418,6 @@ architecture Behavioral of cortex_m0_core is
      signal number_of_ones_initial :  STD_LOGIC_VECTOR (3 downto 0);
      signal LDM_total_bytes_read :  STD_LOGIC_VECTOR (4 downto 0);    -- cannot exceed 7 * 4 = 28 bytes
   
-	
-    
-	     
 	-- Simulation signals  
 	--synthesis translate off
     signal cortex_m0_opcode : string(1 to 17) := "                 ";
@@ -436,7 +441,7 @@ begin
     );
     
     m0_decoder: decoder port map ( 
-                                clk => HCLK,   
+                                clk => HCLK,    
                               reset => internal_reset,
                         instruction => current_instruction_final,
        inst32_detected_in_prev_inst => inst32_detected_in_prev_inst,
@@ -471,12 +476,14 @@ begin
                      access_mem => access_mem,
                 gp_data_in_ctrl => gp_data_in_ctrl, 
                disable_executor => disable_executor,
+                        SP_main => SP_main,
                         cmd_out => cmd_out,
                       set_flags => set_flags,
                          result => result,
                     alu_temp_32 => alu_temp_32,
                 overflow_status => overflow_status,
-                             WE => WE
+                             WE => WE,
+                     SP_updated => SP_updated
          );
          
       m0_core_state_m: core_state port map (
@@ -510,7 +517,8 @@ begin
              msr_update_CONTROL => msr_update_CONTROL,
                     new_PRIMASK => gp_ram_dataB (0 downto 0),
                     new_CONTROL => gp_ram_dataB (1 downto 0),
-                         new_SP => gp_ram_dataB,
+                         new_SP => new_SP,
+                     SP_updated => SP_updated,
                              PC => PC,
                         SP_main => SP_main,
                      SP_process => SP_process,
@@ -621,6 +629,14 @@ begin
             new_PC <= result;
         end if;
     end process;
+    
+    new_SP_p : process (gp_ram_dataB, result, SP_updated) begin
+        if (SP_updated) then
+            new_SP <= result; 
+        else
+            new_SP <= gp_ram_dataB; 
+        end if;
+    end process;
   
     pos_A_is_multi_cycle_p : process (HCLK, internal_reset) begin
        if (internal_reset = '1') then
@@ -630,6 +646,7 @@ begin
                 if (PC(1) = '0') then
                     -- instruction at position A
                     if (command_value = LDR_imm5 or 
+                        command_value = LDR_SP_imm8 or 
                         command_value = LDRH_imm5 or 
                         command_value = LDRB_imm5 or 
                         command_value = LDR or 
@@ -697,32 +714,34 @@ begin
     end process;     
   
     
-    HADDR_p : process ( LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, 
+    HADDR_temp_p : process ( LDM_STM_access_mem, haddr_ctrl, data_memory_addr, data_memory_addr_i, 
                         PC(31 downto 2), LDM_STM_mem_addr, VT_addr, PUSH_mem_addr, POP_mem_addr, 
                         branch_target_address_value, branch_target_address, new_PC, SVC_addr) begin
 --        if (command_value = SVC) then        
 --            HADDR <= x"0000_002C";      -- SVC exception no. = 11 * 4 = 44 = 0x2C 
 --        else                
             case (haddr_ctrl) is
-                when              sel_PC         =>  HADDR <= PC(31 downto 2) & B"00";  
-                when            sel_DATA         =>  HADDR <= data_memory_addr;
-                when             sel_LDM         =>  HADDR <= std_logic_vector (LDM_STM_mem_addr);
-                when             sel_STM         =>  HADDR <= std_logic_vector (LDM_STM_mem_addr);
-                when           sel_WDATA         =>  HADDR <= std_logic_vector (data_memory_addr_i);
-                when    sel_VECTOR_TABLE         =>  HADDR <= VT_addr;
-                when    sel_SP_main_addr         =>  HADDR <= std_logic_vector (PUSH_mem_addr);
-                when    sel_SP_main_addr_plus_4  =>  HADDR <= std_logic_vector (POP_mem_addr);
-                when       sel_PC_plus_4         =>  HADDR <=  PC_plus_4 (31 downto 2) & B"00";  
-                when          sel_BRANCH         =>  HADDR <= std_logic_vector (branch_target_address_value);
-                when       sel_BRANCH_BL         =>  HADDR <= std_logic_vector (branch_target_address);
-                when           sel_BX_Rm         =>  HADDR <= new_PC;
-                when          sel_BLX_Rm         =>  HADDR <= new_PC;
-                when    sel_SP_main_addr_SVC     =>  HADDR <= std_logic_vector (PUSH_mem_addr);
-                when    sel_SVC_mem_content      =>  HADDR <= SVC_addr;
+                when              sel_PC         =>  HADDR_temp <= PC(31 downto 2) & B"00";  
+                when            sel_DATA         =>  HADDR_temp <= data_memory_addr;
+                when             sel_LDM         =>  HADDR_temp <= std_logic_vector (LDM_STM_mem_addr);
+                when             sel_STM         =>  HADDR_temp <= std_logic_vector (LDM_STM_mem_addr);
+                when           sel_WDATA         =>  HADDR_temp <= std_logic_vector (data_memory_addr_i);
+                when    sel_VECTOR_TABLE         =>  HADDR_temp <= VT_addr;
+                when    sel_SP_main_addr         =>  HADDR_temp <= std_logic_vector (PUSH_mem_addr);
+                when    sel_SP_main_addr_plus_4  =>  HADDR_temp <= std_logic_vector (POP_mem_addr);
+                when       sel_PC_plus_4         =>  HADDR_temp <=  PC_plus_4 (31 downto 2) & B"00";  
+                when          sel_BRANCH         =>  HADDR_temp <= std_logic_vector (branch_target_address_value);
+                when       sel_BRANCH_BL         =>  HADDR_temp <= std_logic_vector (branch_target_address);
+                when           sel_BX_Rm         =>  HADDR_temp <= new_PC;
+                when          sel_BLX_Rm         =>  HADDR_temp <= new_PC;
+                when    sel_SP_main_addr_SVC     =>  HADDR_temp <= std_logic_vector (PUSH_mem_addr);
+                when    sel_SVC_mem_content      =>  HADDR_temp <= SVC_addr;
                 when        others               =>  null;
             end case;
 --        end if;
     end process;   
+    
+    HADDR <= HADDR_temp;
    
     LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
     PUSH_mem_addr <=  unsigned (SP_main and x"FFFF_FFFE");
@@ -1018,13 +1037,16 @@ begin
             when MOVS_imm8      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when ADDS_imm3      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when ADDS_imm8      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADD_SP_imm8    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when SUBS_imm3      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when SUBS_imm8      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when SUB_SP_imm7    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when CMP_imm8       => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LSLS_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LSRS_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when ASRS_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_imm5       => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when LDR_SP_imm8    => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDRH_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDRB_imm5      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
             when LDR_label      => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
@@ -1040,6 +1062,7 @@ begin
             when BRANCH_imm11   => imm8_z_ext_value <= x"0000_0" & '0' & gp_addrA_value(2 downto 0) & imm8;  -- Zero extend
             when BL             => imm8_z_ext_value <= x"0000_0" & '0' & gp_addrA_value(2 downto 0) & imm8;  -- Zero extend
             when CPS            => imm8_z_ext_value <= x"0000_00" & imm8;  -- Zero extend
+            when ADD_SP_SP_imm7 => imm8_z_ext_value <= x"0000_0" & B"00" & imm8 & B"00";  -- Zero extend
             when others  => imm8_z_ext_value <= (others => '0');
         end case;       
     end process; 
@@ -1060,7 +1083,7 @@ begin
         --variable calc_index : unsigned (7 downto 0);        -- Calculate index by dividing : Word: divide by 4, HWord: divide by 2, Byte: no change                             
                                      begin
         case (command_value) is
-            when LDR_imm5 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5 | STRH_imm5 | STRB_imm5 | STR_SP_imm8  => 
+            when LDR_imm5 | LDR_SP_imm8 | LDRH_imm5 | LDRB_imm5 | LDR_label | STR_imm5 | STRH_imm5 | STRB_imm5 | STR_SP_imm8  => 
                 LDR_mul_result_value <= shift_left (unsigned (imm8), to_integer(LDR_multiplier));
             when LDR | LDRH | LDRSH | LDRB | LDRSB =>
                 LDR_mul_result_value <= shift_left (unsigned (mem_index_content(7 downto 0)), to_integer(LDR_multiplier));     
@@ -1207,6 +1230,17 @@ begin
             end if;    
         end if;
     end process;
+    
+    
+    -----------------------------------------------------------------------------------------
+    -- Reconfigurable related codes start from here.
+    -----------------------------------------------------------------------------------------
+    
+--    m0_RC_PC_sensivity_i: m0_RC_PC_sensivity port map( 
+--            HADDR => HADDR_temp,
+--            invoke_accelerator => invoke_accelerator
+--        );
+
 
     -----------------------------------------------------------------------------------------
     -- Simulation related code starts here,
@@ -1333,7 +1367,18 @@ begin
                 elsif std_match(current_instruction_final(15 downto 6), "0100000101") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0));
                     Rm_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3));
-                    cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "       ";   
+                    cortex_m0_opcode <= "ADCS " & Rd_decode & "," & Rm_decode & "       "; 
+                -------------------------------------------------------------------------------------- -- ADD <Rd>,SP,#<imm8>  
+                elsif std_match(current_instruction_final(15 downto 11), "10101") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction_final (10 downto 8));
+                    imm8_decode(2) :=   hexcharacter (current_instruction_final (7 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "ADD " & Rd_decode & ",SP," & imm8_decode & "    ";     
+                -------------------------------------------------------------------------------------- -- ADD SP,SP,#<imm8>  
+                elsif std_match(current_instruction_final(15 downto 7), "101100000") then                
+                    imm8_decode(2) :=   hexcharacter ('0' & current_instruction_final (6 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "ADD " & "SP,SP," & imm8_decode & "    ";
                 -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>  
                 elsif std_match(current_instruction_final(15 downto 9), "0001111") then                  
                     Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0));
@@ -1362,6 +1407,12 @@ begin
                     Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0));
                     Rn_decode(2) := hexcharacter ('0' & current_instruction_final (5 downto 3));
                     cortex_m0_opcode <= "RSBS " & Rd_decode & "," & Rn_decode & "       ";   
+                -------------------------------------------------------------------------------------- -- SUB SP,SP,#<imm7> 
+                elsif std_match(current_instruction_final(15 downto 7), "101100001") then                 
+                    imm8_decode(2) :=   hexcharacter ('0' & current_instruction_final (6 downto 4));
+                    imm8_decode(3) :=   hexcharacter (current_instruction_final (3 downto 0));
+                    cortex_m0_opcode <= "SUB SP,SP," & imm8_decode & "    "; 
+                    
                 -------------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>
                 elsif std_match(current_instruction_final(15 downto 6), "0100001101") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0));
@@ -1474,6 +1525,12 @@ begin
                     imm8_decode(2) :=  hexcharacter ("000" & current_instruction_final (10));
                     imm8_decode(3) :=  hexcharacter (current_instruction_final (9 downto 6));  
                     cortex_m0_opcode <= "LDR  " & Rd_decode & ",[" & Rn_decode & "," & imm8_decode & "] ";  
+                -------------------------------------------------------------------------------------- -- LDR <Rt>,[SP{,#<imm8>}]
+                elsif std_match(current_instruction_final(15 downto 11), "10011") then                
+                    Rd_decode(2) := hexcharacter ('0' & current_instruction_final (10 downto 8)); -- Rt
+                    imm8_decode(2) :=  hexcharacter (current_instruction_final (7 downto 4));
+                    imm8_decode(3) :=  hexcharacter (current_instruction_final (3 downto 0));  
+                    cortex_m0_opcode <= "LDR " & Rd_decode & ",[SP" & "," & imm8_decode & "]  ";  
                 -------------------------------------------------------------------------------------- -- LDRH <Rt>, [<Rn>{,#<imm5>}]
                 elsif std_match(current_instruction_final(15 downto 11), "10001") then                
                     Rd_decode(2) := hexcharacter ('0' & current_instruction_final (2 downto 0)); -- Rt

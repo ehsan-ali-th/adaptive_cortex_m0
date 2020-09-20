@@ -135,15 +135,15 @@ package helper_funcs is
 
     type executor_cmds_t is (                               -- Executor commands
         MOVS_imm8, MOVS, MOV, 
-        ADDS_imm3, ADDS, ADD, ADD_PC,  ADDS_imm8, ADCS,
-        SUBS_imm3, SUBS, SUBS_imm8, SBCS,
+        ADDS_imm3, ADDS, ADD, ADD_PC,  ADDS_imm8, ADCS, ADD_SP_imm8, ADD_SP_SP_imm7,
+        SUBS_imm3, SUBS, SUBS_imm8, SBCS, SUB_SP_imm7,
         RSBS,
         MULS,
         CMP, CMN, CMP_imm8,
         ANDS, EORS, ORRS, BICS, MVNS, TST,
         RORS,
         LSLS_imm5, LSLS, LSRS_imm5, LSRS, ASRS_imm5, ASRS,
-        LDR_imm5, LDRH_imm5, LDRB_imm5, LDR, LDRH, LDRSH, LDRB, 
+        LDR_imm5, LDR_SP_imm8, LDRH_imm5, LDRB_imm5, LDR, LDRH, LDRSH, LDRB, 
         LDRSB, LDR_label, LDM,
         STR_imm5, STRH_imm5, STRB_imm5, STR, STRH,        STRB, 
                STR_SP_imm8, STM,

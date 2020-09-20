@@ -354,6 +354,40 @@ begin
                     access_mem_mode <= MEM_ACCESS_NONE;
                     LR_PC <= '0';
                     cond <= B"1111";
+                ----------------------------------------------------------------------------------- -- ADD <Rd>,SP,#<imm8>  
+                elsif (std_match(opcode, "10101-")) then                   
+                    gp_WR_addr <= '0' & instruction (10 downto 8);          -- Rd
+                    gp_addrA <= B"0000";                    
+                    gp_addrB <= B"0000";
+                    gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                    imm8 <= instruction (7 downto 0);                       -- imm8
+                    execution_cmd <= ADD_SP_imm8;
+                    destination_is_PC <= false;
+                    access_mem <= false;    
+                    use_base_register <= false;   
+                    mem_load_size <= NOT_DEF;
+                    mem_load_sign_ext <= false;
+                    LDM_STM_access_mem <= false; 
+                    access_mem_mode <= MEM_ACCESS_NONE;
+                    LR_PC <= '0';
+                    cond <= B"1111";
+                ----------------------------------------------------------------------------------- -- ADD SP,SP,#<imm7>  
+                elsif (std_match(opcode, "101100") and instruction(9 downto 7) = B"000") then                   
+                    gp_WR_addr <=  B"1101";                                  -- SP
+                    gp_addrA <= B"0000";                    
+                    gp_addrB <= B"0000";
+                    gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                    imm8 <= '0' & instruction (6 downto 0);                 -- imm7
+                    execution_cmd <= ADD_SP_SP_imm7;
+                    destination_is_PC <= false;
+                    access_mem <= false;    
+                    use_base_register <= false;   
+                    mem_load_size <= NOT_DEF;
+                    mem_load_sign_ext <= false;
+                    LDM_STM_access_mem <= false; 
+                    access_mem_mode <= MEM_ACCESS_NONE;
+                    LR_PC <= '0';
+                    cond <= B"1111";    
                 ----------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>   
                 elsif (std_match(opcode, "000110") and instruction(9) = '1') then                   
                     gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
@@ -431,6 +465,23 @@ begin
                     imm8 <= B"0000_0000";
                     execution_cmd <= RSBS;
                     destination_is_PC <= false;   
+                    access_mem <= false;    
+                    use_base_register <= false;   
+                    mem_load_size <= NOT_DEF;
+                    mem_load_sign_ext <= false;
+                    LDM_STM_access_mem <= false; 
+                    access_mem_mode <= MEM_ACCESS_NONE;
+                    LR_PC <= '0';
+                    cond <= B"1111";
+                ----------------------------------------------------------------------------------- --SUB SP,SP,#<imm7> 
+                elsif (std_match(opcode, "101100") and instruction(9 downto 7) = B"001") then                   
+                    gp_WR_addr <= B"1101";                                  -- SP
+                    gp_addrA <= B"0000";                    
+                    gp_addrB <= B"0000";
+                    gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                    imm8 <= '0' & instruction (6 downto 0);                 -- imm7
+                    execution_cmd <= SUB_SP_imm7;
+                    destination_is_PC <= false;
                     access_mem <= false;    
                     use_base_register <= false;   
                     mem_load_size <= NOT_DEF;
@@ -757,7 +808,23 @@ begin
                     access_mem_mode <= MEM_ACCESS_READ;
                     LR_PC <= '0';
                     cond <= B"1111";
-                ----------------------------------------------------------------------------------- -- LDRH <Rt>,[<Rn>{,#<imm5>}]
+                ----------------------------------------------------------------------------------- -- LDR <Rt>,[SP{,#<imm8>}]
+                elsif (std_match(opcode, "10011-") ) then       
+                    gp_WR_addr <= '0' & instruction (10 downto 8);            -- Rt (target)
+                    gp_addrA <= B"1101";                                      -- SP (base)
+                    gp_addrB <= B"0000";
+                    gp_addrC <=  B"0000";                                     -- Will not be used '0' 
+                    imm8 <= instruction (7 downto 0);                         -- imm8 (index)
+                    execution_cmd <= LDR_SP_imm8;
+                    destination_is_PC <= false;    
+                    access_mem <= true;    
+                    use_base_register <= true;   
+                    mem_load_size <= WORD;
+                    mem_load_sign_ext <= false;
+                    LDM_STM_access_mem <= false; 
+                    access_mem_mode <= MEM_ACCESS_READ;
+                    LR_PC <= '0';
+                    cond <= B"1111";                ----------------------------------------------------------------------------------- -- LDRH <Rt>,[<Rn>{,#<imm5>}]
                 elsif (std_match(opcode, "10001-") ) then      
                     gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rt    
                     gp_addrA <=  '0' & instruction (5 downto 3);             -- Rn

@@ -66,6 +66,7 @@ entity core_state is
         new_PRIMASK : std_logic_vector (0 downto 0);
         new_CONTROL : std_logic_vector (1 downto 0);
         new_SP : in std_logic_vector (31 downto 0);
+        SP_updated : in boolean;
         PC : out std_logic_vector (31 downto 0);
         SP_main : out std_logic_vector (31 downto 0);
         SP_process : out std_logic_vector (31 downto 0);
@@ -367,7 +368,7 @@ begin
         end if; 
     end process;
     
-    SP_main_value_p : process (m0_core_state, SP_main_init, SP_main, new_SP, msr_update_MSP) begin
+    SP_main_value_p : process (m0_core_state, SP_main_init, SP_main, new_SP, msr_update_MSP, SP_updated) begin
         if (m0_core_state = s_RESET) then
             SP_main_value <= x"0000_0000";
         else  
@@ -390,8 +391,13 @@ begin
                     m0_core_next_state = s_SVC_PUSH_R14 or
                     m0_core_next_state = s_SVC_PUSH_RETURN_ADDR or
                     m0_core_next_state = s_SVC_PUSH_xPSR) then
-                SP_main_value <= std_logic_vector (unsigned(SP_main) - 4);
-           elsif (  m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R0 or
+                if (SP_updated) then
+                    SP_main_value <= std_logic_vector (unsigned(new_SP) - 4);
+                else    
+                    SP_main_value <= std_logic_vector (unsigned(SP_main) - 4);
+                end if;    
+           elsif (  m0_core_next_state = s_DATA_MEM_ACCESS_POP or
+                    m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R0 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R1 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R2 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R3 or
@@ -400,8 +406,14 @@ begin
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R6 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_R7 or
                     m0_core_next_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
-                SP_main_value <= std_logic_vector (unsigned(SP_main) + 4);  
+                if (SP_updated) then
+                    SP_main_value <= std_logic_vector (unsigned(new_SP) + 4);
+                else    
+                    SP_main_value <= std_logic_vector (unsigned(SP_main) + 4);
+                end if;  
             elsif (m0_core_state = s_MSR) and msr_update_MSP then
+                SP_main_value <= new_SP; 
+            elsif (m0_core_state = s_RUN) and SP_updated then
                 SP_main_value <= new_SP;                 
             end if;      
         end if; 

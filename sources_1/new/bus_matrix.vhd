@@ -61,13 +61,42 @@ entity bus_matrix is
 end bus_matrix;
 
 architecture Behavioral of bus_matrix is
+
+component RC_accel_rom is
+    port (
+        clk   : in  std_logic;
+        addr : in  std_logic_vector (3 downto 0);
+        dataout : out std_logic_vector (7 downto 0)
+    );
+end component RC_accel_rom;
+
+component RC_PC_sensivity is
+    Port (
+        HADDR : in std_logic_vector(31 downto 0);
+        invoke_accelerator : out std_logic
+     );
+end component RC_PC_sensivity;
+
+
     signal internal_reset : std_logic;
     signal HSEL_code_bram_value : std_logic;
     signal HSEL_data_bram_value : std_logic;
     signal HSEL_code_bram : std_logic;
     signal HSEL_data_bram : std_logic;
+    signal invoke_accelerator : std_logic;
 
 begin
+
+--    m0_accel_rom: accel_rom port map (
+--        clk     => clk,
+--        addr    => 
+--        dataout => 
+--    );
+
+    m0_RC_PC_sensivity : RC_PC_sensivity port map(
+        HADDR => cortex_m0_HADDR,
+        invoke_accelerator => invoke_accelerator
+    );
 
     internal_reset <= not reset;
 
