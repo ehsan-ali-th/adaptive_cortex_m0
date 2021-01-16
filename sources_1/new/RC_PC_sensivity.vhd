@@ -14,7 +14,7 @@ begin
 invoke_accelerator_p: process(HADDR) begin
     case HADDR is
       when 
-           x"00000088" |
+           x"00000088" |  
            x"00000092" |
            x"000000a4" |
            x"000000cc" |

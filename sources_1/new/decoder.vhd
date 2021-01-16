@@ -55,7 +55,8 @@ entity decoder is
         LDM_STM_access_mem : out boolean;
         access_mem_mode : out access_mem_mode_t;
         cond : out std_logic_vector (3 downto 0);
-        prev_inst: out std_logic_vector (15 downto 0)
+        prev_inst: out std_logic_vector (15 downto 0);
+        is_ALU_instruction: out boolean
     );
 end decoder;
 
@@ -204,8 +205,8 @@ begin
                 access_mem_mode <= MEM_ACCESS_READ;
                 LR_PC <= '0';         
                 cond <=  B"1111";
-            else    
-                report "Unknown 32-bit instruction. Exception must be raised." severity error;                
+--            else    
+--                report "Unknown 32-bit instruction. Exception must be raised." severity error;                
             end if;       
         else
             if (inst32_detected = false) then
@@ -217,6 +218,23 @@ begin
                     gp_addrC <=  B"0000";                                   -- Will not be used '0' 
                     imm8 <= instruction (7 downto 0);
                     execution_cmd <= MOVS_imm8;
+                    destination_is_PC <= false;
+                    access_mem <= false;    
+                    use_base_register <= false;   
+                    mem_load_size <= NOT_DEF;
+                    mem_load_sign_ext <= false;
+                    LDM_STM_access_mem <= false; 
+                    access_mem_mode <= MEM_ACCESS_NONE;
+                    LR_PC <= '0';
+                    cond <= B"1111";
+                ----------------------------------------------------------------------------------- -- ADR Rd, #<imm8>
+                elsif std_match(opcode, "10100-") then                                                 
+                    gp_WR_addr <= '0' & instruction (10 downto 8); -- Rd 
+                    gp_addrA <= B"0000";
+                    gp_addrB <= B"0000";
+                    gp_addrC <=  B"0000";                                   -- Will not be used '0' 
+                    imm8 <= instruction (7 downto 0);
+                    execution_cmd <= ADR;
                     destination_is_PC <= false;
                     access_mem <= false;    
                     use_base_register <= false;   
@@ -243,7 +261,7 @@ begin
                     access_mem_mode <= MEM_ACCESS_NONE;
                     LR_PC <= '0';
                     cond <= B"1111";
-                ----------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
+                ----------------------------------------------------------------------------------- -- MOV <Rd>,<Rm>
                 elsif (std_match(opcode, "010001") and instruction(9 downto 8) = "10") then         
                     gp_WR_addr <= instruction(7) & instruction (2 downto 0);    -- Rd
                     gp_addrA <= instruction (6 downto 3);                       -- Rn
@@ -391,8 +409,8 @@ begin
                 ----------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>   
                 elsif (std_match(opcode, "000110") and instruction(9) = '1') then                   
                     gp_WR_addr <= '0' & instruction (2 downto 0);           -- Rd
-                    gp_addrA <= '0' & instruction (8 downto 6);             -- Rm
-                    gp_addrB <= '0' & instruction (5 downto 3);             -- Rn
+                    gp_addrA <= '0' & instruction (5 downto 3);             -- Rn
+                    gp_addrB <= '0' & instruction (8 downto 6);             -- Rm
                     gp_addrC <=  B"0000";                                   -- Will not be used '0' 
                     imm8 <= B"0000_0000";
                     execution_cmd <= SUBS;
@@ -1286,7 +1304,7 @@ begin
                     access_mem_mode <= MEM_ACCESS_READ;
                     LR_PC <= '0';         
                     cond <= B"1111"; 
-                ----------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm>
+                ----------------------------------------------------------------------------------- -- UXTH <Rd>,<Rm> 
                 elsif (std_match(opcode, "101100") and instruction(9 downto 6) = B"1010")  then    
                     gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
                     gp_addrA <= '0' & instruction (5 downto 3);              -- Rm
@@ -1303,7 +1321,7 @@ begin
                     access_mem_mode <= MEM_ACCESS_READ;
                     LR_PC <= '0';         
                     cond <= B"1111"; 
-                ----------------------------------------------------------------------------------- -- UXTB <Rd>,<Rm>
+                ----------------------------------------------------------------------------------- -- UXTB <Rd>,<Rm> 
                 elsif (std_match(opcode, "101100") and instruction(9 downto 6) = B"1011")  then    
                     gp_WR_addr <= '0' & instruction (2 downto 0);            -- Rd 
                     gp_addrA <= '0' & instruction (5 downto 3);              -- Rm
@@ -1436,6 +1454,51 @@ begin
         end if;         
     end process;
 
+    is_ALU_instruction_p: process (execution_cmd) begin
+        if (execution_cmd = ADDS_imm3 or
+            execution_cmd =  ADDS or
+            execution_cmd = ADD or
+            execution_cmd = ADD_PC or
+            execution_cmd = ADDS_imm8 or
+            execution_cmd = ADCS or
+            execution_cmd = ADD_SP_imm8 or
+            execution_cmd = ADD_SP_SP_imm7 or
+            execution_cmd = SUBS_imm3 or
+            execution_cmd = SUBS or
+            execution_cmd = SUBS_imm8 or
+            execution_cmd = SBCS or
+            execution_cmd = SUB_SP_imm7 or
+            execution_cmd = RSBS or
+            execution_cmd = MULS or
+            execution_cmd = CMP or
+            execution_cmd = CMN  or
+            execution_cmd = CMP_imm8 or
+            execution_cmd = ANDS or
+            execution_cmd = EORS or
+            execution_cmd = ORRS or
+            execution_cmd = BICS or
+            execution_cmd = MVNS or
+            execution_cmd = TST or
+            execution_cmd = RORS or
+            execution_cmd = LSLS_imm5 or
+            execution_cmd = LSLS or
+            execution_cmd = LSRS_imm5 or
+            execution_cmd = LSRS  or
+            execution_cmd = ASRS_imm5 or
+            execution_cmd = ASRS or
+            execution_cmd = SXTH or
+            execution_cmd = SXTB or
+            execution_cmd = UXTH or
+            execution_cmd = UXTB or
+            execution_cmd = REV or
+            execution_cmd = REV16 or
+            execution_cmd = REVSH
+        ) then
+            is_ALU_instruction <= true;
+        else
+            is_ALU_instruction <= false;
+        end if;   
+    end process;
 
     -- base = Align(PC,4);
     -- address = if add then (base + imm32) else (base - imm32);

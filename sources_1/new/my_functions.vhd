@@ -59,15 +59,17 @@ package helper_funcs is
         s_PRE1_RUN,
         s_PRE2_RUN,
         s_RUN,
+        s_RUN_FIRST_CYCLE,
         s_DATA_MEM_ACCESS_R,
         s_DATA_MEM_ACCESS_W,
-        s_EXECUTE_DATA_MEM_R,
-        s_EXECUTE_DATA_MEM_W,
+--        s_DATA_MEM_ACCESS_W_STR,
+        s_EXECUTE_DATA_MEM_R,                           -- covered
+        s_EXECUTE_DATA_MEM_W,                           -- covered    
         s_PC_UPDATED,
         s_PIPELINE_FLUSH1,
         s_PIPELINE_FLUSH2,
         s_PIPELINE_FLUSH3,
-        s_DATA_MEM_ACCESS_LDM,
+        s_DATA_MEM_ACCESS_LDM,                                -- covered
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R0,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R1,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R2,
@@ -76,7 +78,7 @@ package helper_funcs is
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R5,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R6,
         s_DATA_MEM_ACCESS_EXECUTE_LDM_R7,
-        s_FINISH_STM,
+        s_FINISH_STM,                                       -- covered
         s_DATA_REG_ACCESS_EXECUTE_STM_R0,
         s_DATA_REG_ACCESS_EXECUTE_STM_R1,
         s_DATA_REG_ACCESS_EXECUTE_STM_R2,
@@ -85,7 +87,7 @@ package helper_funcs is
         s_DATA_REG_ACCESS_EXECUTE_STM_R5,
         s_DATA_REG_ACCESS_EXECUTE_STM_R6,
         s_DATA_REG_ACCESS_EXECUTE_STM_R7,
-        s_FINISH_PUSH,
+        s_FINISH_PUSH,                                          -- covered
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R0,
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R1,
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R2,
@@ -95,7 +97,7 @@ package helper_funcs is
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R6,
         s_DATA_REG_ACCESS_EXECUTE_PUSH_R7,
         s_DATA_REG_ACCESS_EXECUTE_PUSH_LR,
-        s_DATA_MEM_ACCESS_POP,
+        s_DATA_MEM_ACCESS_POP,                  -- covered 
         s_DATA_MEM_ACCESS_EXECUTE_POP_R0,
         s_DATA_MEM_ACCESS_EXECUTE_POP_R1,
         s_DATA_MEM_ACCESS_EXECUTE_POP_R2,
@@ -105,12 +107,12 @@ package helper_funcs is
         s_DATA_MEM_ACCESS_EXECUTE_POP_R6,
         s_DATA_MEM_ACCESS_EXECUTE_POP_R7,
         s_DATA_MEM_ACCESS_EXECUTE_POP_PC,
-        s_BRANCH_PC_UPDATED,
+        s_BRANCH_PC_UPDATED,                    -- covered 
         s_BRANCH_Phase1,
         s_BRANCH_Phase2,
-        s_BRANCH_UNCOND_PC_UPDATED,
-        s_BRANCH_BL_UNCOND_PC_UPDATED,
-        s_BX_PC_UPDATED,
+        s_BRANCH_UNCOND_PC_UPDATED,             -- covered 
+        s_BRANCH_BL_UNCOND_PC_UPDATED,          -- covered
+        s_BX_PC_UPDATED,                        -- covered
         s_BLX_PC_UPDATED,
         s_BLX_Phase1,
         s_BLX_Phase2,
@@ -134,6 +136,7 @@ package helper_funcs is
         );
 
     type executor_cmds_t is (                               -- Executor commands
+        ADR,
         MOVS_imm8, MOVS, MOV, 
         ADDS_imm3, ADDS, ADD, ADD_PC,  ADDS_imm8, ADCS, ADD_SP_imm8, ADD_SP_SP_imm7,
         SUBS_imm3, SUBS, SUBS_imm8, SBCS, SUB_SP_imm7,
@@ -172,6 +175,7 @@ package helper_funcs is
         sel_LDM,                -- Put LDM_STM_mem_addr on the HADDR bus
         sel_STM,                -- Put LDM_STM_mem_addr on the HADDR bus
         sel_WDATA,              -- Put data on the HADDR to be written into memory
+--        sel_WDATA_STR,
         sel_VECTOR_TABLE,
         sel_SP_main_addr,
         sel_SP_main_addr_plus_4,
@@ -190,6 +194,9 @@ package helper_funcs is
         sel_HRDATA_VALUE_SIZED,
         sel_LDM_DATA,
         sel_STM_total_bytes_wrote,
+        sel_PUSH,
+        sel_POP,
+        sel_MEM_W,
         sel_LDM_Rn,
         sel_SP_main_init,
         sel_SP_set,
@@ -315,9 +322,10 @@ package helper_funcs is
         PC_updated      : boolean; 
         imm8_value      : std_logic_vector (7 downto 0);
         LR_PC           : std_logic;
-        cond_satisfied  : boolean
+        cond_satisfied  : boolean;
+        current_state   : core_state_t
         ) return  core_state_t; 
-        
+      
         function inst32_next_state_calc (
         execution_cmd   : executor_cmds_t
         ) return  core_state_t; 
@@ -426,21 +434,19 @@ package body helper_funcs is
        
        return ret; 
     end function;
-    
-  
-   
-    
-     function run_next_state_calc (
+
+    function run_next_state_calc (
         any_access_mem  : boolean; 
         access_mem_mode : access_mem_mode_t;
         execution_cmd   : executor_cmds_t;
         PC_updated      : boolean;
         imm8_value      : std_logic_vector (7 downto 0);
         LR_PC           : std_logic;
-        cond_satisfied  : boolean
+        cond_satisfied  : boolean;
+        current_state   : core_state_t
         ) return core_state_t is
         variable next_state : core_state_t;
-      begin
+    begin
             -- CHECK if instruction needs memory access
             if (any_access_mem = true) then 
                 if (access_mem_mode = MEM_ACCESS_READ) then 
@@ -493,7 +499,12 @@ package body helper_funcs is
                             next_state := s_DATA_REG_ACCESS_EXECUTE_PUSH_R0;
                         else
                             next_state := s_FINISH_STM;
-                        end if;    
+                        end if;
+--                    elsif ( execution_cmd = STR or 
+--                            execution_cmd = STRH or 
+--                            execution_cmd = STRB or 
+--                            execution_cmd = STR_SP_imm8) then    
+--                        next_state := s_DATA_MEM_ACCESS_W_STR;
                     else
                         next_state := s_DATA_MEM_ACCESS_W;
                     end if; 
@@ -501,7 +512,8 @@ package body helper_funcs is
                     -- access_mem_mode = MEM_ACCESS_NONE
                 end if;      
                 -- CHECK if instruction updates PC
-            elsif (PC_updated = true) then
+           -- elsif (PC_updated = true and current_state /= s_BRANCH_Phase2) then
+             elsif (PC_updated = true) then
                  --report "PC_updated = true, cond_satisfied= " &  boolean'image(cond_satisfied) & 
                    -- "execution_cmd= " & executor_cmds_t'image(execution_cmd) severity note;  
                 if (execution_cmd = BRANCH) then    
@@ -517,7 +529,9 @@ package body helper_funcs is
                 elsif (execution_cmd = BLX) then  
                     next_state := s_BLX_PC_UPDATED;    
                 elsif (execution_cmd = SVC) then  
-                    next_state := s_SVC_PUSH_R0;                 
+                    next_state := s_SVC_PUSH_R0;
+                elsif (execution_cmd = BL) then
+                    next_state := s_INST32_DETECTED;                 
                 else
                     next_state := s_PC_UPDATED;
                 end if;  

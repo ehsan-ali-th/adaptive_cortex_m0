@@ -47,6 +47,7 @@ entity executor is
          gp_data_in_ctrl : in gp_data_in_ctrl_t;
          disable_executor : in boolean;
          SP_main : in std_logic_vector(31 downto 0);	
+         gp_WR_addr : in std_logic_vector (3 downto 0);
          cmd_out: out executor_cmds_t;
          set_flags : out boolean;
          result : out std_logic_vector(31 downto 0);
@@ -122,7 +123,78 @@ begin
     
     cmd_out <= command;
     
-    alu_temp_32 <= alu_temp(32);
+    
+    alu_temp_32_p: process (alu_temp(32), command, imm8_z_ext, operand_B, current_flags) begin
+         case (command) is
+            when LSLS_imm5 =>
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (imm8_z_ext (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                    alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (32) has already the new carry status 
+                    alu_temp_32 <= alu_temp(32);                                  
+                end if;     
+            when LSLS =>   
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (operand_B (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                    alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (32) has already the new carry status    
+                    alu_temp_32 <= alu_temp(32);                          
+                end if; 
+            when LSRS_imm5 =>
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (imm8_z_ext (4 downto  0)) = B"00000") then 
+                    -- C will not be changed
+                    alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (0) has the new carry status    
+                    alu_temp_32 <= alu_temp (32);                           
+                end if; 
+            when LSRS =>  
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (operand_B (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                     alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (0) has the new carry status    
+                     alu_temp_32 <= alu_temp (32);                                    
+                end if;  
+            when ASRS_imm5 => 
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (imm8_z_ext (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                    alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (32) has already the new carry status  
+                    alu_temp_32 <= alu_temp(32);                        
+                end if; 
+            when ASRS =>
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (operand_B (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                     alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (32) has already the new carry status    
+                    alu_temp_32 <= alu_temp(32);                                   
+                end if;  
+            when RORS => 
+                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
+                if (unsigned (operand_B (4 downto 0)) = B"00000") then 
+                    -- C will not be changed
+                    alu_temp_32 <= to_std_logic(current_flags.C);
+                else
+                    -- alu_temp (32) has already the new carry status  
+                    alu_temp_32 <= alu_temp(32);                              
+                end if;   
+            when others  =>
+                alu_temp_32 <= alu_temp(32);
+         end case;
+    end process;
+    
+    
     
     -- This process  flushes the pipeline if PC gets updated.
     WE_p: process  (WE_val, gp_data_in_ctrl, access_mem, disable_executor) begin
@@ -139,14 +211,15 @@ begin
         end if;    
     end process;
     
-    execution_p: process  (command, destination_is_PC, operand_A(31), operand_B(31),  alu_result(31), imm8_z_ext(31)) begin
+    execution_p: process  (command, destination_is_PC, operand_A(31), operand_B(31), 
+                            alu_result(31), imm8_z_ext(31), disable_executor, gp_WR_addr) begin
         case (command) is
             ------------------------------------------------------------ -- MOVS Rd, #(imm8)
             when MOVS_imm8 =>                                      
                 WE_val <= '1'; 
                 mux_ctrl <= B"00";          -- immediate value  
                 update_PC <= '0';
-                set_flags <= true;
+                set_flags <= false when disable_executor else true;
                 overflow_status <= (others => '0');
                 mem_access <= false;
                 SP_updated <= false;
@@ -155,7 +228,7 @@ begin
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 update_PC <= '0';
-                set_flags <= true;
+                set_flags <= false when disable_executor else true;
                 overflow_status <= (others => '0');
                 mem_access <= false;
                 SP_updated <= false;
@@ -164,9 +237,23 @@ begin
                 WE_val <= '1'; 
                 mux_ctrl <= B"10";          -- A bus of register bank
                 -- if destination_is_PC = 1 it means d == 15 (destination is PC) then set_flags is always FALSE
-                if (destination_is_PC = true) then set_flags <= false; else set_flags <= true; end if;
+--                if (destination_is_PC = true) then 
+                -- This is a flag bug which I fixed. MOV instruction never sets the flags.
+                set_flags <= false; 
+--                else 
+--                    set_flags <= false when disable_executor else true;
+--                end if;
                 overflow_status <= (others => '0');
                 if (destination_is_PC = true) then update_PC <= '1'; else update_PC <= '0'; end if;
+                mem_access <= false;
+                if (gp_WR_addr = B"1101") then SP_updated <= true; else SP_updated <= false; end if;  -- SP = 13 = 0b1101
+            ------------------------------------------------------------ -- ADR Rd, #(imm8)  
+            when ADR =>                                      
+                WE_val <= '1'; 
+                mux_ctrl <= B"11";          -- ALU result
+                update_PC <= '0';
+                set_flags <= false when disable_executor else true;
+                overflow_status <= (others => '0');
                 mem_access <= false;
                 SP_updated <= false;
             ------------------------------------------------------------ -- ADDS <Rd>,<Rn>,#<imm3>      
@@ -177,7 +264,7 @@ begin
             when ADDS_imm3 | ADDS_imm8 | SUBS_imm3 | SUBS_imm8 | RSBS =>                                        
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
+                set_flags <= false when disable_executor else true;
                 overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;
@@ -199,7 +286,7 @@ begin
             when ADDS | ADD | ADCS | SUBS | SBCS => 
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
+                set_flags <= false when disable_executor else true;
                 overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;   
@@ -218,7 +305,7 @@ begin
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
-                overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                overflow_status <= SP_main(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;    
                 SP_updated <= true;
@@ -227,7 +314,7 @@ begin
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
-                overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                overflow_status <= SP_main(31) & imm8_z_ext(31) & alu_result(31);
                 update_PC <= '0';
                 mem_access <= false;    
                 SP_updated <= true;
@@ -249,7 +336,7 @@ begin
                  LSLS_imm5 | LSLS | LSRS_imm5 | LSRS | ASRS_imm5| ASRS | RORS =>                                               
                 WE_val <= '1'; 
                 mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
+                set_flags <= false when disable_executor else true;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;
@@ -257,17 +344,24 @@ begin
 
             ------------------------------------------------------------ -- CMP <Rn>,<Rm>     T1, T2  
             ------------------------------------------------------------ -- CMN <Rn>,<Rm>    
-            ------------------------------------------------------------ -- CMP <Rn>,#<imm8>     
             ------------------------------------------------------------ -- TST <Rn>,<Rm>     
-            when CMP | CMN | CMP_imm8 | TST =>                                               
+            when CMP | CMN | TST =>                                               
                 WE_val <= '0';              -- Do not write back the result
                 mux_ctrl <= B"11";          -- alu_result
-                set_flags <= true;
-                overflow_status <= (others => '0');
+                set_flags <= false when disable_executor else true;
+                overflow_status <= operand_A(31) & operand_B(31) & alu_result(31);
                 update_PC <= '0'; 
                 mem_access <= false;
                 SP_updated <= false;
-
+            ------------------------------------------------------------ -- CMP <Rn>,#<imm8>     
+            when CMP_imm8 =>               
+                WE_val <= '0';              -- Do not write back the result
+                mux_ctrl <= B"11";          -- alu_result
+                set_flags <= false when disable_executor else true;
+                overflow_status <= operand_A(31) & imm8_z_ext(31) & alu_result(31);
+                update_PC <= '0'; 
+                mem_access <= false;
+                SP_updated <= false;
             ---------------------------------------------------------- --   LDR <Rt>, [<Rn>{,#<imm5>}]
             ---------------------------------------------------------- --   LDR <Rt>,[SP{,#<imm8>}]
             ---------------------------------------------------------- --   LDRH <Rt>,[<Rn>{,#<imm5>}]
@@ -297,7 +391,7 @@ begin
             ---------------------------------------------------------- --  STR <Rt>,[SP,#<imm8>]
             ---------------------------------------------------------- --  STM <Rn>!,<registers>
             when STR_imm5 | STRH_imm5 | STRB_imm5 | STR | STRH | STRB | STR_SP_imm8 | STM  =>                                               
-                WE_val <= '1';              
+                WE_val <= '0';              
                 mux_ctrl <= B"11";          -- alu_result
                 set_flags <= false;
                 overflow_status <= (others => '0');
@@ -386,7 +480,7 @@ begin
             when MSR =>
                 WE_val <= '0';              
                 mux_ctrl <= B"00";          
-                set_flags <= true;
+                set_flags <= false when disable_executor else true;
                 overflow_status <= (others => '0');
                 update_PC <= '0'; 
                 mem_access <= false;  
@@ -433,8 +527,10 @@ begin
      end process;
      
     alu_p: process  (command, operand_A, operand_B, imm8_z_ext, mul_result, current_flags, sign_extended_16bit, sign_extended_8bit) 
+        variable shift_right_operand : std_logic_vector(32 downto 0);	
+        variable shift_right_result : unsigned(32 downto 0);	
     begin
-    
+        shift_right_operand := operand_A & "0";
         case (command) is
             -------------------------------------------------------------------------------------- -- ADDS <Rd>,<Rn>,#<imm3>
             when ADDS_imm3 =>  
@@ -447,7 +543,11 @@ begin
             -------------------------------------------------------------------------------------- -- ADD <Rdn>,<Rm>  
             when ADD =>       
                 -- AAddWithCarry(R[n], shifted, '0');      
-                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);                     
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & operand_B);  
+            -------------------------------------------------------------------------------------- -- ADR <Rd>,#<imm8>
+            when ADR =>  
+                alu_temp <= unsigned("0" & operand_B and  '1' & x"FFFF_FFFC") +  -- Align (PC, 4)
+                            unsigned("0" & x"0000_0" & "00" & imm8_z_ext(7 downto 0) & "00") ;                           
             -------------------------------------------------------------------------------------- -- ADD PC, <Rm> 
             when ADD_PC =>          
                 -- AAddWithCarry(R[n], shifted, '0');
@@ -467,40 +567,54 @@ begin
                 alu_temp <= (unsigned ("0" & operand_A) + unsigned("0" & operand_B)) + to_std_logic(current_flags.C) ; 
             -------------------------------------------------------------------------------------- -- ADD <Rd>,SP,#<imm8>      
             when ADD_SP_imm8 =>      
-                alu_temp <= (unsigned ("0" & operand_A) + unsigned("0" & SP_main)) ;          
+                -- shift imm8_z_ext to left by 2 (to multiply the immediate value by 4)
+                alu_temp <= (unsigned (imm8_z_ext(30 downto 0) & "00") + unsigned("0" & SP_main)) ;          
             -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,#<imm3>
             when SUBS_imm3 =>       
                 -- AddWithCarry(R[n], NOT(imm32), '1');
-                alu_temp <= unsigned ("0" & operand_A) + unsigned(not ("0" & imm8_z_ext)) + 1;          
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & not (imm8_z_ext)) + 1;          
             -------------------------------------------------------------------------------------- -- SUBS <Rd>,<Rn>,<Rm>
             when SUBS =>      
-                -- AddWithCarry(R[n], NOT(shifted), '1');      
-                alu_temp <= unsigned ("0" & operand_A) + unsigned(not ("0" & operand_B)) + 1;            
+            -- shifted = Shift(R[m], shift_t, shift_n, APSR.C);
+            -- (result, carry, overflow) = AddWithCarry(R[n], NOT(shifted), '1');
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & not (operand_B)) + 1;            
             -------------------------------------------------------------------------------------- -- SUBS <Rdn>,#<imm8>
             when SUBS_imm8 =>   
                 -- AddWithCarry(R[n], NOT(imm32), '1');    
-                alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & imm8_z_ext)) + 1;              
+                alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & not(imm8_z_ext)) + 1;              
             -------------------------------------------------------------------------------------- -- SBCS <Rdn>,<Rm>
             when SBCS =>    
-                -- AddWithCarry(R[n], NOT(shifted), APSR.C);         
+--                shifted = Shift(R[m], shift_t, shift_n, APSR.C);
+--                (result, carry, overflow) = AddWithCarry(R[n], NOT(shifted), APSR.C);
+--                R[d] = result;
+--                if setflags then
+--                APSR.N = result<31>;
+--                APSR.Z = IsZeroBit(result);
+--                APSR.C = carry;
+--                APSR.V = overflow;    
                 alu_temp <=                                                                                    
-                    ((unsigned ("0" & operand_A) + unsigned(not("0" & operand_B))) + not (to_std_logic(current_flags.C))) ;       
+                    ((unsigned ("0" & operand_A) + unsigned("0" & not(operand_B))) + to_std_logic(current_flags.C)) ;       
             -------------------------------------------------------------------------------------- -- RSBS <Rd>,<Rn>,#0
             when RSBS =>      
                 -- AddWithCarry(NOT(R[n]), imm32, '1');        
-                alu_temp <= unsigned (not('0' & operand_A)) + 1;                  
+                alu_temp <= unsigned ("0" & not(operand_A)) + 1;                  
             -------------------------------------------------------------------------------------- -- SUB SP,SP,#<imm7>      
             when SUB_SP_imm7 =>      
-                alu_temp <= (unsigned("0" & SP_main) - unsigned (imm8_z_ext)) ;                                                        
+                -- shift imm8_z_ext to left by 2 (to multiply the immediate value by 4)
+                alu_temp <= (unsigned("0" & SP_main) - unsigned (imm8_z_ext(30 downto 0) & "00")) ;                                                        
             -------------------------------------------------------------------------------------- -- MULS <Rdm>,<Rn>,<Rdm>
             when MULS =>      
                 -- result = operand1 * operand2;        
                 alu_temp <= unsigned("0" & mul_result);                                                 
             -------------------------------------------------------------------------------------- -- CMP <Rn>,<Rm>
             when CMP =>             
-                 -- subtract operand A from B but discard the result
-                 -- AddWithCarry(R[n], NOT(shifted), '1');
-                 alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & operand_B)) + 1;                                       
+                -- shifted = Shift(R[m], SRType_LSL, 0, APSR.C);
+                -- (result, carry, overflow) = AddWithCarry(R[n], NOT(shifted), '1');
+                -- APSR.N = result<31>;
+                -- APSR.Z = IsZeroBit(result);
+                -- APSR.C = carry;
+                -- APSR.V = overflow;
+                 alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & not(operand_B)) + 1;                                       
             -------------------------------------------------------------------------------------- -- CMN <Rn>,<Rm>
             when CMN =>             
                  -- Add operand A with B but discard the result
@@ -510,12 +624,24 @@ begin
             when CMP_imm8 =>             
                  -- Add operand A with imm8 but discard the result
                  -- AddWithCarry(R[n], shifted, '0');
-                 alu_temp <= unsigned ("0" & operand_A) + unsigned(not("0" & imm8_z_ext)) + 1;                                       
+                 alu_temp <= unsigned ("0" & operand_A) + unsigned("0" & not(imm8_z_ext)) + 1;                                       
             -------------------------------------------------------------------------------------- -- ANDS <Rdn>,<Rm>
-            when ANDS =>             
-                -- (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
-                -- result = R[n] AND shifted;
-                -- carry out = carry in
+            when ANDS =>  
+
+            -- AND <Rdn>,<Rm>
+            --   d = UInt(Rdn); n = UInt(Rdn); m = UInt(Rm);
+            --   (shift_t, shift_n) = (SRType_LSL, 0);
+   
+            --    (shifted, carry) = Shift_C(R[m], shift_t, shift_n, APSR.C);
+            --    (shifted, carry) = Shift_C(R[m], SRType_LSL, 0, APSR.C);
+            --    result = R[n] AND shifted;
+            --    R[d] = result;
+            --    if setflags then
+            --    APSR.N = result<31>;
+            --    APSR.Z = IsZeroBit(result);
+            --    APSR.C = carry;
+            --    // APSR.V unchanged           
+              
                 alu_temp(31 downto 0) <= unsigned (operand_A) and unsigned(operand_B); 
                 alu_temp(32) <= to_std_logic(current_flags.C);                                    
             -------------------------------------------------------------------------------------- -- EORS <Rdn>,<Rm>
@@ -558,88 +684,50 @@ begin
             when LSLS_imm5 =>             
                 -- (result, carry) = Shift_C(R[m], SRType_LSL, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <= shift_left (unsigned (operand_A),  to_integer (unsigned (imm8_z_ext (4 downto 0)))); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( imm8_z_ext (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;    
+                alu_temp (32 downto 0) <= shift_left ('0' & unsigned (operand_A),  to_integer (unsigned (imm8_z_ext (4 downto 0)))); 
             -------------------------------------------------------------------------------------- --  LSLS <Rdn>,<Rm>
             when LSLS =>             
                 -- shift_n = UInt(R[m]<7:0>);
                 -- (result, carry) = Shift_C(R[n], SRType_LSL, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <= shift_left (unsigned (operand_A),  to_integer (unsigned (operand_B (4 downto 0)))); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( operand_B (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;    
+                alu_temp (32 downto 0) <= shift_left ('0' & unsigned (operand_A),  to_integer (unsigned (operand_B (4 downto 0)))); 
             -------------------------------------------------------------------------------------- --  LSRS <Rd>,<Rm>,#<imm5>
             when LSRS_imm5 =>             
                 -- (result, carry) = Shift_C(R[m], SRType_LSR, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <= shift_right (unsigned (operand_A),  to_integer (unsigned (imm8_z_ext (4 downto 0)))); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( imm8_z_ext (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;    
+               shift_right_result := shift_right (unsigned (shift_right_operand),  to_integer (unsigned (imm8_z_ext (4 downto 0)))); 
+               alu_temp (31 downto 0) <= shift_right_result (32 downto 1);
+               alu_temp (32) <=  shift_right_result (0);
             -------------------------------------------------------------------------------------- --  LSRS <Rdn>,<Rm>
             when LSRS =>             
                 -- shift_n = UInt(R[m]<7:0>);
                 -- (result, carry) = Shift_C(R[n], SRType_LSL, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <= shift_right (unsigned (operand_A),  to_integer (unsigned (operand_B (4 downto 0)))); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( operand_B (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;  
+               shift_right_result := shift_right (unsigned (shift_right_operand),
+                    to_integer ( unsigned (operand_B (4 downto 0) )) ); 
+                alu_temp (31 downto 0) <= shift_right_result (32 downto 1);
+                alu_temp (32) <=  shift_right_result (0);
              -------------------------------------------------------------------------------------- --  ASRS <Rd>,<Rm>,#<imm5>
             when ASRS_imm5 =>             
                 -- (result, carry) = Shift_C(R[m], SRType_LSR, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <= unsigned ( 
-                    shift_right (signed (operand_A),  to_integer (unsigned (imm8_z_ext (4 downto 0))))
+                alu_temp (32 downto 0) <= unsigned ( 
+                    shift_right (signed ('0' & operand_A),  to_integer (unsigned (imm8_z_ext (4 downto 0))))
                     ); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( imm8_z_ext (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;    
             -------------------------------------------------------------------------------------- --  ASRS <Rdn>,<Rm>
             when ASRS =>             
                 -- shift_n = UInt(R[m]<7:0>);
                 -- (result, carry) = Shift_C(R[n], SRType_LSL, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <=  unsigned ( 
-                    shift_right (signed (operand_A),  to_integer (unsigned (operand_B (4 downto 0))))
+                alu_temp (32 downto 0) <=  unsigned ( 
+                    shift_right (signed ('0' & operand_A),  to_integer (unsigned (operand_B (4 downto 0))))
                     ); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( operand_B (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;           
             -------------------------------------------------------------------------------------- --  RORS <Rdn>,<Rm>
             when RORS =>             
                 -- shift_n = UInt(R[m]<7:0>);
                 -- (result, carry) = Shift_C(R[n], SRType_ROR, shift_n, APSR.C);
                 -- R[d] = result;
-                alu_temp (31 downto 0) <= shift_right (unsigned (operand_A),  to_integer (unsigned (operand_B (4 downto 0)))); 
-                -- The C flag is unaffected if the shift value is 0. Otherwise, the C flag is updated to the last bit shifted out.
-                if ( unsigned( operand_B (4 downto 0)) = B"00000") then 
-                    -- C will not be changed
-                else
-                    alu_temp (32) <= alu_temp (31);                                    
-                end if;    
-            
+                alu_temp (32 downto 0) <= shift_right (unsigned ('0' & operand_A),  to_integer (unsigned (operand_B (4 downto 0)))); 
            
             -------------------------------------------------------------------------------------- --  LDR <Rt>, [<Rn>{,#<imm5>}]
             -------------------------------------------------------------------------------------- --  LDR <Rt>,[SP{,#<imm8>}]
@@ -740,7 +828,8 @@ begin
             when NOP =>
                 alu_temp <= (others => '0');   
             when others  =>
-                alu_temp <= (others => '0');    
+                alu_temp <= (others => '0');  
+                shift_right_result := (others => '0');  
         end case;       
      end process;
 

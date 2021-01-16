@@ -26,6 +26,8 @@ use IEEE.STD_LOGIC_1164.ALL;
 -- arithmetic functions with Signed or Unsigned values
 use IEEE.NUMERIC_STD.ALL;
 
+--use ieee.STD_LOGIC_ARITH.all;
+
 -- Uncomment the following library declaration if instantiating
 -- any Xilinx leaf cells in this code.
 --library UNISIM;
@@ -46,7 +48,7 @@ entity bus_matrix is
         cortex_m0_HRDATA : out std_logic_vector (31 downto 0);
             
         code_bram_DOUTA : in std_logic_vector (31 downto 0); 
-        code_bram_ADDRA : out std_logic_vector (14 downto 0); 
+        code_bram_ADDRA : out std_logic_vector (17 downto 0); 
         code_bram_DINA : out std_logic_vector (31 downto 0); 
         code_bram_ENA : out std_logic; 
         code_bram_WEA : out std_logic_vector (3 downto 0); 
@@ -55,27 +57,36 @@ entity bus_matrix is
         data_bram_ADDRA : out std_logic_vector (14 downto 0); 
         data_bram_DINA : out std_logic_vector (31 downto 0); 
         data_bram_ENA : out std_logic; 
-        data_bram_WEA : out std_logic_vector (3 downto 0)
+        data_bram_WEA : out std_logic_vector (3 downto 0);
+        
+        invoke_accelerator : out  std_logic
 
     );
 end bus_matrix;
 
 architecture Behavioral of bus_matrix is
 
-component RC_accel_rom is
-    port (
-        clk   : in  std_logic;
-        addr : in  std_logic_vector (3 downto 0);
-        dataout : out std_logic_vector (7 downto 0)
-    );
-end component RC_accel_rom;
-
-component RC_PC_sensivity is
+    component RC_accel_rom is
+        port (
+            clk   : in  std_logic;
+            addr : in  std_logic_vector (3 downto 0);
+            dataout : out std_logic_vector (7 downto 0)
+        );
+    end component RC_accel_rom;
+    
+    component RC_PC_sensivity is
+        Port (
+            HADDR : in std_logic_vector(31 downto 0);
+            invoke_accelerator : out std_logic
+         );
+    end component RC_PC_sensivity;
+    
+    component m0_PC_OP is
     Port (
-        HADDR : in std_logic_vector(31 downto 0);
-        invoke_accelerator : out std_logic
+        PC     : in  std_logic_vector(31 downto 0);
+        operand : out std_logic_vector(10 downto 0)
      );
-end component RC_PC_sensivity;
+    end component;
 
 
     signal internal_reset : std_logic;
@@ -83,7 +94,9 @@ end component RC_PC_sensivity;
     signal HSEL_data_bram_value : std_logic;
     signal HSEL_code_bram : std_logic;
     signal HSEL_data_bram : std_logic;
-    signal invoke_accelerator : std_logic;
+    signal invoke_accelerator_i : std_logic;
+    signal accelerator_operands : std_logic_vector(10 downto 0);
+    
 
 begin
 
@@ -93,11 +106,18 @@ begin
 --        dataout => 
 --    );
 
-    m0_RC_PC_sensivity : RC_PC_sensivity port map(
+    m0_RC_PC_sensivity : RC_PC_sensivity port map (
         HADDR => cortex_m0_HADDR,
-        invoke_accelerator => invoke_accelerator
-    );
-
+        invoke_accelerator => invoke_accelerator_i
+        );
+    
+    m0_PC_OP_p : m0_PC_OP port map (
+        PC => cortex_m0_HADDR,
+        operand=> accelerator_operands
+        );
+        
+    invoke_accelerator <= invoke_accelerator_i;
+     
     internal_reset <= not reset;
 
     -- We need to delay select signals by one clock cycle for memory reads
@@ -116,11 +136,11 @@ begin
     address_decoder_p: process (cortex_m0_HADDR) 
         variable mem_address_int : integer;
     begin
-        mem_address_int := to_integer(unsigned(cortex_m0_HADDR));
+        mem_address_int := to_integer (unsigned (cortex_m0_HADDR));
         case (mem_address_int) is
-            when 0          to     32767      => HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0000_8000 
-            when 536870912  to     536903680  => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x2000_8000
-            when others                       => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None  
+            when 0          to     262143      => HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0003_FFFF (256KB) 
+            when 536870912  to     536903679   => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x2000_8000 (32KB)
+            when others                        => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None  
         end case;
     end process;
     
@@ -180,13 +200,21 @@ begin
         case (mux_sel) is
             when "10"   => code_bram_DINA <= cortex_m0_HWDATA;
             when "01"   => data_bram_DINA <= cortex_m0_HWDATA;
+--              cortex_m0_HWDATA(7 downto 0) & 
+--                                               cortex_m0_HWDATA(15 downto 8) & 
+--                                               cortex_m0_HWDATA(23 downto 16) &
+--                                               cortex_m0_HWDATA(31 downto 24);
+                                                 
+                                                
             when others => null;
         end case;
     end process;   
     
-    code_bram_ADDRA (14 downto 13) <= "00";
+    
     data_bram_ADDRA (14 downto 13) <= "00";
-    code_bram_ADDRA (12 downto 0) <= cortex_m0_HADDR (14 downto 2);              -- Word Size (32-bit) read 
+    code_bram_ADDRA (17 downto 16) <= "00";
+    
     data_bram_ADDRA (12 downto 0) <= cortex_m0_HADDR (14 downto 2);
-
+    code_bram_ADDRA (15 downto 0) <= cortex_m0_HADDR (17 downto 2);              -- Word Size (32-bit) read 
+    
 end Behavioral;
