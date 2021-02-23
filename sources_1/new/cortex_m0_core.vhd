@@ -59,7 +59,7 @@ entity cortex_m0_core is
             RXEV : in std_logic;
             
 --            -- Accelerator related signals:
-            invoke_accelerator : in std_logic;
+--            invoke_accelerator : in std_logic;
 
             -- AMBA 3 AHB-LITE INTERFACE OUTPUTS
            HADDR : out std_logic_vector (31 downto 0);  -- AHB transaction address  format [Lower byte-Upper byte | Lower byte-Upper byte]
@@ -175,6 +175,8 @@ architecture Behavioral of cortex_m0_core is
             new_PC : in std_logic_vector (31 downto 0);
             SP_updated : in boolean;
             invoke_accelerator : in std_logic;
+            invoke_accelerator_next : in std_logic;
+            invoke_accelerator_next2 : in std_logic; 
             access_mem_mode : in access_mem_mode_t;
             SP_main_init : in std_logic_vector (31 downto 0);
             PC_init : in std_logic_vector (31 downto 0);
@@ -255,6 +257,20 @@ architecture Behavioral of cortex_m0_core is
              PC_init : out std_logic_vector(31 downto 0);
              SVC_addr : out std_logic_vector(31 downto 0)	
          );
+    end component;
+    
+    component RC_PC_sensivity is
+        Port (
+            HADDR : in std_logic_vector(31 downto 0);
+            invoke_accelerator : out std_logic
+         );
+    end component RC_PC_sensivity;
+    
+    component m0_PC_OP is
+        Port (
+            PC     : in  std_logic_vector(31 downto 0);
+            operand : out std_logic_vector(10 downto 0)
+        );
     end component;
     
     -- Declare clock interface
@@ -446,6 +462,12 @@ architecture Behavioral of cortex_m0_core is
     
      signal number_of_ones_initial :  STD_LOGIC_VECTOR (3 downto 0);
      signal LDM_total_bytes_read :  STD_LOGIC_VECTOR (4 downto 0);    -- cannot exceed 7 * 4 = 28 bytes
+     
+     -- accelerator related signals
+     signal invoke_accelerator : std_logic;
+     signal invoke_accelerator_next : std_logic;
+     signal invoke_accelerator_next2 : std_logic;
+     signal accelerator_operands : std_logic_vector(10 downto 0);
   
 	-- Simulation signals  
 	--synthesis translate off
@@ -555,6 +577,8 @@ begin
                          new_SP => new_SP,
                      SP_updated => SP_updated,
              invoke_accelerator => invoke_accelerator,
+        invoke_accelerator_next => invoke_accelerator_next,
+       invoke_accelerator_next2 => invoke_accelerator_next2,        
                              PC => PC,
                         SP_main => SP_main,
                   SP_main_value => SP_main_value,
@@ -601,7 +625,18 @@ begin
         );
         
      clk <= HCLK;
-     accelerator_state <= USE_ACCELERATOR;   
+     -- accelerator_state is a signal that is probed in simulation. If use accelator is on then the assert is disabled.
+     accelerator_state <= USE_ACCELERATOR; 
+     
+    m0_RC_PC_sensivity : RC_PC_sensivity port map (
+        HADDR => HADDR_temp,
+        invoke_accelerator => invoke_accelerator
+        );  
+    
+    m0_PC_OP_p : m0_PC_OP port map (
+        PC => HADDR_temp,
+        operand=> accelerator_operands
+        );
         
      msr_flags_p : process (gp_data_in_ctrl) begin
         if (gp_data_in_ctrl = sel_Rn) and (SYSm(7 downto 3) = B"0_0000")  then
@@ -806,7 +841,23 @@ begin
 --        end if;
     end process;   
     
-    HADDR <= HADDR_temp;
+--    no_accelerator_g: if USE_ACCELERATOR = false generate  
+        HADDR <= HADDR_temp;
+--    end generate; 
+    
+--    accelerator_g: if USE_ACCELERATOR = true generate  
+--        HADDR_p: process (HADDR_temp, invoke_accelerator_next) 
+--            variable HADDR_temp_plus_2 : unsigned (31 downto 0);
+--        begin 
+--            HADDR_temp_plus_2 := unsigned (HADDR_temp) + 2;
+--            if (invoke_accelerator_next = '1') then
+--                HADDR <= std_logic_vector (HADDR_temp_plus_2);
+--            else
+--                HADDR <= HADDR_temp;
+--            end if;
+--        end process;    
+--    end generate; 
+
    
     LDM_STM_mem_addr <= (unsigned (base_reg_content_LDM_STM) + LDM_STM_mem_address_index) and x"FFFF_FFFE";     -- gp_ram_dataA holds the base value (Rn)
     PUSH_mem_addr <=  unsigned ((unsigned (SP_main) - 4) and x"FFFF_FFFE");
@@ -1116,22 +1167,33 @@ begin
         end if;    
     end process;
     
-   
-   
-
-    
     ---------------------------------------------------------------------------------------
     --- Hardware which drives (Decoder)
     ---------------------------------------------------------------------------------------     
-    current_instruction_p: process (PC(1), hrdata_program) begin
-        if (PC(1) = '0') then
-            current_instruction <= hrdata_program(31 downto 16);    
-        else    
-            current_instruction <= hrdata_program(15 downto 0);    
-        end if;
-    end process;
+    accelerator_ci_g: if USE_ACCELERATOR generate 
+    current_instruction_p: process (PC(1), hrdata_program, invoke_accelerator_next2) begin
+        if (invoke_accelerator_next2 = '1') then 
+                current_instruction <= hrdata_program(15 downto 0); 
+            else
+                if (PC(1) = '0') then
+                    current_instruction <= hrdata_program(31 downto 16);    
+                else    
+                    current_instruction <= hrdata_program(15 downto 0);    
+                end if;
+            end if;    
+        end process; 
+    end generate;
     
-  
+    no_accelerator_ci_g: if USE_ACCELERATOR = false  generate  
+         current_instruction_p: process (PC(1), hrdata_program) begin
+            if (PC(1) = '0') then
+                current_instruction <= hrdata_program(31 downto 16);    
+            else    
+                current_instruction <= hrdata_program(15 downto 0);    
+            end if;
+        end process;
+    end generate;
+      
     flipflops_32bit_instruction_p: process (clk, internal_reset) begin
         if (internal_reset = '1') then
             current_instruction_32bit_HI <= (others => '0');
@@ -1347,6 +1409,8 @@ begin
             SYSm <= B"0000_0000";
             destination_is_PC <= false;
             is_ALU_instruction <= false;
+            invoke_accelerator_next  <= '0';
+            invoke_accelerator_next2 <= '0';
         else
             if (rising_edge(clk)) then
                     imm8_z_ext <= imm8_z_ext_value;
@@ -1371,6 +1435,8 @@ begin
                         hrdata_data <= hrdata_data_value; 
                         hrdata_program <= hrdata_program_value;
                     end if;  
+                    invoke_accelerator_next  <= invoke_accelerator;
+                    invoke_accelerator_next2 <= invoke_accelerator_next;
             end if;    
         end if;
     end process;

@@ -71,6 +71,8 @@ entity core_state is
         new_SP : in std_logic_vector (31 downto 0);
         SP_updated : in boolean;
         invoke_accelerator : in std_logic;
+        invoke_accelerator_next : in std_logic;
+        invoke_accelerator_next2 : in std_logic;     
         
         PC : out std_logic_vector (31 downto 0);
         SP_main : out std_logic_vector (31 downto 0);
@@ -143,7 +145,6 @@ architecture Behavioral of core_state is
     signal is_last_pop_val : boolean;
     signal is_last_push : boolean;
     signal is_last_push_val : boolean;
-    signal invoke_accelerator_next : std_logic;
                                                                         
     
     component sign_ext is
@@ -301,115 +302,247 @@ begin
         end if;    
     end process;  
     
-    PC_p: process (clk, reset) begin
-        if (reset = '1') then
-            PC <= x"0000_0000";
-            SP_main <= x"0000_0000";
-            SP_process <= x"0000_0000";
-            PC_decode <= x"0000_0000";
-            PC_execute <= x"0000_0000"; 
-            PC_after_execute  <= x"0000_0000"; 
-            branch_target_address <= x"0000_0000";
-            execution_cmd <= NOT_DEF;
-            inst32_detected <= false;
-            Rn <= B"0000";
-            PRIMASK <= B"0";
-            CONTROL(0) <= mode_privileged;           -- nPRIV
-            CONTROL(1) <= SP_mode_main;              -- SPSEL
-            is_last_pop <= false;
-            is_last_push <= false;
-            cond_satisfied <= false;
-            invoke_accelerator_next <= '0';
-           
-        else    
-            if (rising_edge(clk)) then
-                invoke_accelerator_next <= invoke_accelerator;
-                cond_satisfied <= cond_satisfied_value;
-                execution_cmd <= execution_cmd_value;
-                if (m0_core_state /= s_BRANCH_PC_UPDATED and 
-                    m0_core_state /= s_BRANCH_Phase1) then
-                        inst32_detected <= inst32_detected_value;
-                else
-                     inst32_detected <= false;    
-                end if;        
-                SP_main <= SP_main_value;
-                SP_process <= SP_process_value;
-                PRIMASK <= PRIMASK_value;
-                CONTROL <= CONTROL_value; 
-                is_last_pop <= is_last_pop_val;
-                is_last_push <= is_last_push_val;
-                if (m0_core_next_state = s_INST32_DETECTED) then
-                    Rn <= current_instruction(3 downto 0);
-                end if; 
-                   
-                if (execution_cmd = BRANCH or 
-                    execution_cmd = BRANCH_imm11 or -- BRANCH_imm11 covers BL and unconditional branch
-                    execution_cmd_value = BL or
-                    execution_cmd_value = ISB or
-                    execution_cmd_value = DSB or
-                    execution_cmd_value = DMB) then        
-                    branch_target_address <= std_logic_vector (branch_target_address_value);    
-                end if;  
-                
-                if (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
-                    PC <=  std_logic_vector (unsigned (branch_target_address) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address);
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;   
---                elsif (m0_core_state = s_ISB or m0_core_state = s_DMB or m0_core_state = s_DSB) then 
---                    PC <=  std_logic_vector (unsigned (branch_target_address(31 downto 1) & '0')); 
---                    PC_decode <= std_logic_vector ( unsigned (branch_target_address(31 downto 1) & '0') - 2);
---                    PC_execute <= PC_decode;
---                    PC_after_execute <= PC_execute;  
-                elsif (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then    
-                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address_value);
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;
-                elsif (m0_core_state = s_BRANCH_UNCOND_PC_UPDATED) then    
-                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address_value);
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;    
-                elsif (m0_core_state = s_BX_PC_UPDATED) then 
-                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address_value);
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;
-                elsif (m0_core_state = s_BLX_PC_UPDATED) then 
-                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address_value);
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;
-                elsif (m0_core_state = s_SVC_PC_UPDATED) then 
-                    PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
-                    PC_decode <= std_logic_vector (branch_target_address_value);
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;            
-                elsif (m0_core_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
-                    PC <= ldm_hrdata_value;
-                    PC_decode <= PC;
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;
-                elsif (refetch_i = false) then 
-                    if (gp_addrA_executor_ctrl = false) then
-                        PC <= std_logic_vector (PC_value);           -- normal
+    accelerator_PC_g: if USE_ACCELERATOR generate      
+        PC_p: process (clk, reset) 
+--            variable PC_final : std_logic_vector (31 downto 0);            
+        begin
+            if (reset = '1') then
+                PC <= x"0000_0000";
+                SP_main <= x"0000_0000";
+                SP_process <= x"0000_0000";
+                PC_decode <= x"0000_0000";
+                PC_execute <= x"0000_0000"; 
+                PC_after_execute  <= x"0000_0000"; 
+                branch_target_address <= x"0000_0000";
+                execution_cmd <= NOT_DEF;
+                inst32_detected <= false;
+                Rn <= B"0000";
+                PRIMASK <= B"0";
+                CONTROL(0) <= mode_privileged;           -- nPRIV
+                CONTROL(1) <= SP_mode_main;              -- SPSEL
+                is_last_pop <= false;
+                is_last_push <= false;
+                cond_satisfied <= false;
+               
+            else    
+                if (rising_edge(clk)) then
+                    cond_satisfied <= cond_satisfied_value;
+                    execution_cmd <= execution_cmd_value;
+                    if (m0_core_state /= s_BRANCH_PC_UPDATED and 
+                        m0_core_state /= s_BRANCH_Phase1) then
+                            inst32_detected <= inst32_detected_value;
                     else
-                        PC <= new_PC;
-                    end if;    
-                    PC_decode <= PC;
-                    PC_execute <= PC_decode;
-                    PC_after_execute <= PC_execute;
-                end if;
-            end if;    
-        end if;
-    end process;
+                         inst32_detected <= false;    
+                    end if;        
+                    SP_main <= SP_main_value;
+                    SP_process <= SP_process_value;
+                    PRIMASK <= PRIMASK_value;
+                    CONTROL <= CONTROL_value; 
+                    is_last_pop <= is_last_pop_val;
+                    is_last_push <= is_last_push_val;
+                    if (m0_core_next_state = s_INST32_DETECTED) then
+                        Rn <= current_instruction(3 downto 0);
+                    end if; 
+                       
+                    if (execution_cmd = BRANCH or 
+                        execution_cmd = BRANCH_imm11 or -- BRANCH_imm11 covers BL and unconditional branch
+                        execution_cmd_value = BL or
+                        execution_cmd_value = ISB or
+                        execution_cmd_value = DSB or
+                        execution_cmd_value = DMB) then        
+                        branch_target_address <= std_logic_vector (branch_target_address_value);    
+                    end if;  
+                    
+                    if (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (branch_target_address) + 4); -- branch_target_address + 2 + n where n = 2
+                        else
+                            PC <= std_logic_vector (unsigned (branch_target_address) + 2);
+                        end if;    
+                        PC_decode <= std_logic_vector (branch_target_address);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;   
+                    elsif (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 4);  -- branch_target_address_value + 2 + n where n = 2
+                        else
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        end if;
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (m0_core_state = s_BRANCH_UNCOND_PC_UPDATED) then    
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 4);  -- branch_target_address_value + 2 + n where n = 2
+                        else
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        end if;
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;    
+                    elsif (m0_core_state = s_BX_PC_UPDATED) then 
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 4);  -- branch_target_address_value + 2 + n where n = 2
+                        else
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        end if;
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (m0_core_state = s_BLX_PC_UPDATED) then 
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 4);  -- branch_target_address_value + 2 + n where n = 2
+                        else
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        end if;
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (m0_core_state = s_SVC_PC_UPDATED) then 
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 4);  -- branch_target_address_value + 2 + n where n = 2
+                        else
+                            PC <= std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        end if;
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;            
+                    elsif (m0_core_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
+                        if (invoke_accelerator_next = '1') then 
+                            PC <= std_logic_vector (unsigned (ldm_hrdata_value) + 1);  -- ldm_hrdata_value + n where n = 2
+                        else
+                            PC <= ldm_hrdata_value; 
+                        end if;
+                        PC <= ldm_hrdata_value;
+                        PC_decode <= PC;
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (refetch_i = false) then 
+                        if (invoke_accelerator_next = '1') then 
+                            if (gp_addrA_executor_ctrl = false) then
+                                PC <= std_logic_vector (unsigned (PC_value) + 2);           -- PC_value + n where n = 2
+                            else
+                                PC <= new_PC;             
+                            end if;    
+                        else
+                            if (gp_addrA_executor_ctrl = false) then
+                                PC <= std_logic_vector (PC_value);           -- normal
+                            else
+                                PC <= new_PC;
+                            end if;    
+                        end if;
+                        PC_decode <= PC;
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    end if;
+                end if;    
+            end if;
+        end process;
+    end generate;
+
+    no_accelerator_PC_g: if USE_ACCELERATOR = false  generate      
+        PC_p: process (clk, reset) begin
+            if (reset = '1') then
+                PC <= x"0000_0000";
+                SP_main <= x"0000_0000";
+                SP_process <= x"0000_0000";
+                PC_decode <= x"0000_0000";
+                PC_execute <= x"0000_0000"; 
+                PC_after_execute  <= x"0000_0000"; 
+                branch_target_address <= x"0000_0000";
+                execution_cmd <= NOT_DEF;
+                inst32_detected <= false;
+                Rn <= B"0000";
+                PRIMASK <= B"0";
+                CONTROL(0) <= mode_privileged;           -- nPRIV
+                CONTROL(1) <= SP_mode_main;              -- SPSEL
+                is_last_pop <= false;
+                is_last_push <= false;
+                cond_satisfied <= false;
+               
+            else    
+                if (rising_edge(clk)) then
+                    cond_satisfied <= cond_satisfied_value;
+                    execution_cmd <= execution_cmd_value;
+                    if (m0_core_state /= s_BRANCH_PC_UPDATED and 
+                        m0_core_state /= s_BRANCH_Phase1) then
+                            inst32_detected <= inst32_detected_value;
+                    else
+                         inst32_detected <= false;    
+                    end if;        
+                    SP_main <= SP_main_value;
+                    SP_process <= SP_process_value;
+                    PRIMASK <= PRIMASK_value;
+                    CONTROL <= CONTROL_value; 
+                    is_last_pop <= is_last_pop_val;
+                    is_last_push <= is_last_push_val;
+                    if (m0_core_next_state = s_INST32_DETECTED) then
+                        Rn <= current_instruction(3 downto 0);
+                    end if; 
+                       
+                    if (execution_cmd = BRANCH or 
+                        execution_cmd = BRANCH_imm11 or -- BRANCH_imm11 covers BL and unconditional branch
+                        execution_cmd_value = BL or
+                        execution_cmd_value = ISB or
+                        execution_cmd_value = DSB or
+                        execution_cmd_value = DMB) then        
+                        branch_target_address <= std_logic_vector (branch_target_address_value);    
+                    end if;  
+                    
+                    if (m0_core_state = s_BRANCH_BL_UNCOND_PC_UPDATED and execution_cmd = BL) then 
+                        PC <=  std_logic_vector (unsigned (branch_target_address) + 2); 
+                        PC_decode <= std_logic_vector (branch_target_address);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;   
+                    elsif (m0_core_state = s_BRANCH_PC_UPDATED and cond_satisfied = true) then    
+                        PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (m0_core_state = s_BRANCH_UNCOND_PC_UPDATED) then    
+                        PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;    
+                    elsif (m0_core_state = s_BX_PC_UPDATED) then 
+                        PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (m0_core_state = s_BLX_PC_UPDATED) then 
+                        PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (m0_core_state = s_SVC_PC_UPDATED) then 
+                        PC <=  std_logic_vector (unsigned (branch_target_address_value) + 2); 
+                        PC_decode <= std_logic_vector (branch_target_address_value);
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;            
+                    elsif (m0_core_state = s_DATA_MEM_ACCESS_EXECUTE_POP_PC) then
+                        PC <= ldm_hrdata_value;
+                        PC_decode <= PC;
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    elsif (refetch_i = false) then 
+                        if (gp_addrA_executor_ctrl = false) then
+                            PC <= std_logic_vector (PC_value);           -- normal
+                        else
+                            PC <= new_PC;
+                        end if;    
+                        PC_decode <= PC;
+                        PC_execute <= PC_decode;
+                        PC_after_execute <= PC_execute;
+                    end if;
+                end if;    
+            end if;
+        end process;
+    end generate;
     
-    
-    accelerator_g: if USE_ACCELERATOR  generate  
+    accelerator_PC_value_g: if USE_ACCELERATOR  generate  
         PC_value_p : process (PC, m0_core_state, refetch_i, PC_init, 
-                                execution_cmd_value, invoke_accelerator_next) begin
-            if (invoke_accelerator_next) then
+                                execution_cmd_value, invoke_accelerator) begin
+            if (invoke_accelerator) then
                 -- accelerator is on
                 if (m0_core_state = s_SET_PC) then
                     PC_value <= unsigned (PC_init (31 downto 1) & '0');
@@ -431,7 +564,7 @@ begin
         end process;
     end generate;
     
-    no_accelerator_g: if USE_ACCELERATOR = false generate  
+    no_accelerator_PC_value_g: if USE_ACCELERATOR = false generate  
         PC_value_p : process (PC, m0_core_state, refetch_i, PC_init, 
                                 execution_cmd_value) begin
             if (m0_core_state = s_SET_PC) then

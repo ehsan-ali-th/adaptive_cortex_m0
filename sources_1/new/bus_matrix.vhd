@@ -57,9 +57,9 @@ entity bus_matrix is
         data_bram_ADDRA : out std_logic_vector (14 downto 0); 
         data_bram_DINA : out std_logic_vector (31 downto 0); 
         data_bram_ENA : out std_logic; 
-        data_bram_WEA : out std_logic_vector (3 downto 0);
+        data_bram_WEA : out std_logic_vector (3 downto 0)
         
-        invoke_accelerator : out  std_logic
+--        invoke_accelerator : out  std_logic
 
     );
 end bus_matrix;
@@ -73,20 +73,6 @@ architecture Behavioral of bus_matrix is
             dataout : out std_logic_vector (7 downto 0)
         );
     end component RC_accel_rom;
-    
-    component RC_PC_sensivity is
-        Port (
-            HADDR : in std_logic_vector(31 downto 0);
-            invoke_accelerator : out std_logic
-         );
-    end component RC_PC_sensivity;
-    
-    component m0_PC_OP is
-    Port (
-        PC     : in  std_logic_vector(31 downto 0);
-        operand : out std_logic_vector(10 downto 0)
-     );
-    end component;
 
 
     signal internal_reset : std_logic;
@@ -94,30 +80,9 @@ architecture Behavioral of bus_matrix is
     signal HSEL_data_bram_value : std_logic;
     signal HSEL_code_bram : std_logic;
     signal HSEL_data_bram : std_logic;
-    signal invoke_accelerator_i : std_logic;
-    signal accelerator_operands : std_logic_vector(10 downto 0);
     
-
 begin
-
---    m0_accel_rom: accel_rom port map (
---        clk     => clk,
---        addr    => 
---        dataout => 
---    );
-
-    m0_RC_PC_sensivity : RC_PC_sensivity port map (
-        HADDR => cortex_m0_HADDR,
-        invoke_accelerator => invoke_accelerator_i
-        );
     
-    m0_PC_OP_p : m0_PC_OP port map (
-        PC => cortex_m0_HADDR,
-        operand=> accelerator_operands
-        );
-        
-    invoke_accelerator <= invoke_accelerator_i;
-     
     internal_reset <= not reset;
 
     -- We need to delay select signals by one clock cycle for memory reads
@@ -134,14 +99,25 @@ begin
     end process;
     
     address_decoder_p: process (cortex_m0_HADDR) 
-        variable mem_address_int : integer;
+--        variable mem_address_int : integer;
     begin
-        mem_address_int := to_integer (unsigned (cortex_m0_HADDR));
-        case (mem_address_int) is
-            when 0          to     262143      => HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0003_FFFF (256KB) 
-            when 536870912  to     536903679   => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x2000_8000 (32KB)
-            when others                        => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None  
-        end case;
+--        mem_address_int := to_integer (unsigned (cortex_m0_HADDR));
+--        case (cortex_m0_HADDR) is
+--            when 0          to     x"00003FFF"      => HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0003_FFFF (256KB) 
+--            when x"20000000"  to   x"20007FFF"   => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x2000_8000 (32KB)
+--            when others                        => HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None  
+--        end case;
+--                         17 15   11   7    3    
+--        0000_0000_0000_0011_1111_1111_1111_1111
+        if (cortex_m0_HADDR(31 downto 18) = B"0000_0000_0000_00") then
+             HSEL_code_bram_value <= '1'; HSEL_data_bram_value <= '0';      -- Select Code RAM Block : 0x0000_0000 to 0x0003_FFFF (256KB)
+--                             14  11   7    3    
+--        0010_0000_0000_0000_0111_1111_1111_1111
+        elsif (cortex_m0_HADDR(31 downto 15) = B"0010_0000_0000_0000_0") then
+             HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '1';      -- Select Data RAM Block : 0x2000_0000 to 0x2000_7FFF (32KB)   
+        else
+             HSEL_code_bram_value <= '0'; HSEL_data_bram_value <= '0';      -- Select None        
+        end if;
     end process;
     
     rdata_mux_p: process (HSEL_code_bram, HSEL_data_bram, code_bram_DOUTA, data_bram_DOUTA) 
